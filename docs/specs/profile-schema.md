@@ -15,7 +15,7 @@ Conventions shared with the sibling specs:
 
 - Hash strings are `b3:<64 lowercase hex>` — BLAKE3 over RFC 8785 canonical JSON (D3).
 - Capability atoms are the Rust enum `kernel::Capability` (D6). This spec owns their **TOML string form** (§11), the bundle expansion (§5), and the placeholder expansion (§7.4). The kernel and sandbox see only atoms.
-- `ProfileLoad` event payload is `{ kind: model|agent|project|bundles|skill, path, hash }` (event-schema.md).
+- `profile_load` event payload is `{ kind: model|agent|project|bundles|catalog|skill|subagent, path, hash, rejected }` (event-schema.md §2.3; `catalog` and `subagent` are emitted by P1.8 and P2.4 respectively). This document writes it as `ProfileLoad{kind:"…"}` for brevity.
 
 ---
 
@@ -217,7 +217,7 @@ Present only for fine-tuned models (P5.1).
 | `trained_against_profile_hash` | hash string | yes | The `resolved_profile_hash` (§7.6) of the task agent whose traces trained these weights. |
 | `warn_on_drift` | bool | no (default `true`) | Emit the drift warning (below) when the hash does not match. `false` silences it for a deliberately re-targeted fine-tune; the mismatch is still recorded. |
 
-Drift rule: after resolution, if `fine_tune.trained_against_profile_hash != resolved_profile_hash`, the loader emits a `ProfileDrift` warning event `{ expected, actual }` (event-schema.md) and the protocol surfaces it to the UI (P5.1). To keep the comparison well-founded, **the `fine_tune` table is excluded from the struct that `resolved_profile_hash` covers** (§7.6); otherwise pinning the hash would change the hash.
+Drift rule: after resolution, if `fine_tune.trained_against_profile_hash != resolved_profile_hash`, the loader emits a `warning` event with `class = "profile_drift"` and `detail = { expected, actual }` (event-schema.md §2.28) and the protocol surfaces it to the UI (P5.1). To keep the comparison well-founded, **the `fine_tune` table is excluded from the struct that `resolved_profile_hash` covers** (§7.6); otherwise pinning the hash would change the hash.
 
 ### 2.7 `[[middleware]]` and priority slots
 
@@ -242,7 +242,7 @@ Kernel-reserved names: `recorder`, `replay`. A file using them is rejected (`E_R
 
 **The parser slot.** When `model.tool_format = "parsed:<syntax>"`, the resolver synthesizes the entry `{ name = "tool_call_parser", priority = 100, config = { syntax = "<syntax>" } }` unless the model profile declares an entry with that name, in which case the declared entry is used and its `priority` MUST be 100 (`E_PARSER_SLOT`) and `config.syntax`, if present, MUST equal `<syntax>`. When `tool_format = "native"`, an entry named `tool_call_parser` is rejected (`E_PARSER_SLOT`: no parser without a parsed format). Only the model profile may declare `tool_call_parser`; its priority (100) is outside the agent and project ranges, so those layers cannot reach it — this is the mechanical form of the "fixed slot".
 
-**Ordering.** The resolved chain is the union of all layers' entries keyed by `name` (§6.3), sorted by a **stable sort on `priority`**; ties keep the order in which the entry was first declared, layer 0 first, then layer 1, 2, 3, in file order. `before_model` and `before_tool` run the chain head → tail; `after_model`, `after_tool`, `on_compact`, `on_resume` run tail → head (kernel-interface.md fixes this; it is repeated here because it is what makes 990 the right place for the recorder).
+**Ordering.** The resolved chain is the union of all layers' entries keyed by `name` (§6.3), sorted by a **stable sort on `priority`**; ties keep the order in which the entry was first declared, layer 0 first, then layer 1, 2, 3, in file order. **All six hooks run the chain head → tail in the same order** (kernel-interface.md fixes this; there is no onion/reverse order for the `after_*` hooks). It is repeated here because it is what makes 100 the right place for the tool-call parser (it must be the first `after_model` to see the raw response) and 990 the right place for the recorder (it must see final values in every hook).
 
 ### 2.8 Complete model profile example
 
@@ -300,7 +300,7 @@ One file per role. All tables are optional except `[agent]` and `[tools]`.
 | `role_prompt` | text source | no | Block 2 of §8. |
 | `agents_md` | path | no (default `${workdir}/AGENTS.md`) | Block 3. A missing file omits the block and emits `W_AGENTS_MD_MISSING`; it is not an error, because a fresh repo has none. Read once at session start (§8.3). |
 | `context_budget_tokens` | integer > 0 | no (default 40000, D16) | Per-turn context target; exceeding it is a warning event (P2.9). |
-| `spill_cap_bytes` | integer > 0 | no (default 16384) | Tool results larger than this are spilled to `ArtifactStore` and replaced by `{ handle, head, tail }` by the kernel (D12). Only the size is a profile value; spilling itself cannot be disabled (§4.2). |
+| `spill_cap_bytes` | integer in `[1024, 1048576]` | no (default 16384) | Tool results larger than this are spilled to `ArtifactStore` and replaced by `{ handle, head, tail }` by the kernel (D12). Only the size is a profile value; spilling itself cannot be disabled (§4.2). |
 
 #### `[agent.eval_set]`
 
@@ -351,7 +351,7 @@ MCP tools (`mcp.<server>.<tool>`) and out-of-process extension tools (`ext.<mani
 | `lazy` | bool | no (default `true`) | `true`: schemas stay out of the prompt until `find_tools` or a skill names them. `false`: schemas are always in the prompt — allowed but counted against `context_budget_tokens`. |
 | `env` | table of string → string | no | Extra environment for the server process; values MUST NOT contain secrets inline — use `secret:<NAME>` atoms in `capabilities` and the launcher injects the handle-resolved value under the same name. Keys are subject to the `env_allow` secret-pattern rule (§3.9). |
 
-An MCP server is a `Session`-kind tool host (D5): one sandboxed process per session under `derive_policy(capabilities, grants_resolved)`.
+An MCP server is a `Session`-kind tool host (D5): one sandboxed process per session under `kernel::derive_policy_with(capabilities, grants_resolved, &limits)`.
 
 ### 3.5 `[skills]` (P2.3)
 
@@ -388,11 +388,11 @@ As §2.7, priority range 200–899.
 
 ### 3.9 `[sandbox]`
 
-The sandbox policy is **derived mechanically from atoms** by `sandbox::derive_policy` (D5, P1.7); this table supplies limits and can only **narrow** what the atoms would otherwise allow. It can never grant anything.
+The sandbox policy is **derived mechanically from atoms** by `kernel::derive_policy_with(caps, grants, &SandboxLimits)` (pure, defined in `kernel`, re-exported by `sandbox`; D5, P1.7); this table supplies limits and can only **narrow** what the atoms would otherwise allow. It can never grant anything.
 
 | Key | Type | Default | Meaning and narrowing rule |
 |---|---|---|---|
-| `backend` | string | `"bwrap"` | MUST be in `Registry.sandbox_backends`. `"none"` is accepted **only** when `Registry.dev_build` is true (the `dev-sandbox-none` feature, D14); otherwise `E_SANDBOX_NONE_FORBIDDEN`. Every session under `"none"` logs it (`SessionStart.sandbox_backend`, kernel-interface.md). Not overridable in layer 3. |
+| `backend` | string | `"bwrap"` | MUST be in `Registry.sandbox_backends`. `"none"` is accepted **only** when `Registry.dev_build` is true (the `dev-sandbox-none` feature, D14); otherwise `E_SANDBOX_NONE_FORBIDDEN`. Every session under `"none"` logs it (`session_created.sandbox_backend` plus a `warning{class: "sandbox_backend_none"}`, event-schema.md). Not overridable in layer 3. |
 | `timeout_s` | integer > 0 | `600` | Wall-clock limit per tool invocation (Stateless) or per RPC call (Session). Layer 3 may only lower it. |
 | `scratch_tmpfs_mb` | integer > 0 | `256` | Size of the tmpfs mounted at `/tmp` inside the sandbox. Layer 3 may only lower it. |
 | `env_allow` | list of strings | `["PATH","HOME","LANG","LC_ALL","TERM","TZ"]` | Environment variables passed through from the kernel process. Everything else is scrubbed (D10). A name matching `(?i)(KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL)` is rejected outright (`E_ENV_ALLOW_SECRET_PATTERN`), in every layer. Layer 3 may only remove names. |
@@ -542,7 +542,7 @@ The protocol start-session message may carry `profile_overrides`, a flat map who
 
 `model.temperature`, `model.max_output_tokens`, `model.thinking.enabled`, `model.thinking.budget_tokens`, `agent.context_budget_tokens`, `notebook.path`.
 
-They merge as a layer with the §6 rules and are therefore inside `resolved_profile_hash`. There is no `ProfileLoad` event for them (they are not a file); they appear in the start-session event's payload (event-schema.md).
+They merge as a layer with the §6 rules and are therefore inside `resolved_profile_hash`. There is no `ProfileLoad` event for them (they are not a file); they appear in `session_created.overrides` (event-schema.md §2.2).
 
 ---
 
@@ -759,10 +759,10 @@ pub struct ToolDecl { pub kind: kernel::ToolKind, pub capabilities: Vec<kernel::
    - `notebook.path` as `fs.rw`;
    - `agent.eval_set.hidden` must **not** be covered (`E_HIDDEN_EVAL_REACHABLE`);
    - layer 3 narrowing rules (`E_OVERRIDE_WIDENS_GRANTS`, `E_OVERRIDE_WIDENS_SANDBOX`) by comparing the layer-2-only resolution against the full one.
-9. **Derive the sandbox envelope**: `sandbox::derive_policy(&grants_resolved, &grants_resolved, &limits) -> kernel::SandboxPolicy`, where `limits` is the `[sandbox]` table (`network = false` masks `Net` atoms first). Per-tool policies are derived by the launcher at call time from `(tool.capabilities, grants_resolved, limits)` and are by construction narrower than the envelope. `sandbox_policy_hash = b3(canonical_json(envelope))`.
+9. **Derive the sandbox envelope**: `kernel::derive_policy_with(&grants_resolved, &grants_resolved, &limits) -> Result<kernel::SandboxPolicy, PolicyError>`, where `limits` is the `[sandbox]` table (`network = false` masks `Net` atoms first). Per-tool policies are derived by the launcher at call time from `(tool.capabilities, grants_resolved, limits)` and are by construction narrower than the envelope. `sandbox_policy_hash = b3(canonical_json(envelope))`.
 10. **Assemble the system prompt** blocks (§8) for the first turn; load `AGENTS.md` and, if `resume`, the notebook.
-11. **Emit events** in this order: `ProfileLoad{kind:"bundles"}`, `ProfileLoad{kind:"model"}`, `ProfileLoad{kind:"agent"}`, `ProfileLoad{kind:"project"}` (only if the file exists), then `MiddlewareChainResolved`, then `ProfileDrift` if §2.6 applies. Skill `ProfileLoad` events are emitted per turn as skills activate (P2.3).
-12. **Record in `State`**: `State.profile_hashes: kernel::ProfileHashes { model, agent, project: Option<Hash>, bundles, resolved }`, `State.sandbox_policy_hash`, `State.sandbox_backend`, `State.notebook_path`. Model-call events copy `profile_hashes` into their D13 fields.
+11. **Emit events** in this order: `ProfileLoad{kind:"bundles"}`, `ProfileLoad{kind:"model"}`, `ProfileLoad{kind:"agent"}`, `ProfileLoad{kind:"project"}` (only if the file exists), then `middleware_chain_resolved`, then `warning{class: "profile_drift"}` if §2.6 applies. Skill `ProfileLoad` events are emitted per turn as skills activate (P2.3).
+12. **Record in `State`**: `State.profiles: kernel::ActiveProfiles { model_profile_hash, agent_profile_hash, resolved_profile_hash, project_profile_hash: Option<Hash>, bundles_hash }`, `State.sandbox_policy_hash`, `State.sandbox_backend`, `State.notebook_path`. `model_request` events copy `State.profiles` into their D13 fields.
 
 ### 7.3 Diagnostics
 
@@ -776,7 +776,7 @@ pub struct Diagnostic {
 impl Display for Diagnostic  // "<code> at <file>:<toml_path>: <message>"
 ```
 
-Codes starting `E_` are errors (resolution fails; the session does not start); `W_` are warnings (logged as a `ProfileWarning` event, event-schema.md). The tests in §9 assert on the `Display` prefix `<code> at <file-basename>:<toml_path>`.
+Codes starting `E_` are errors (resolution fails; the session does not start); `W_` are warnings (logged as `warning{class: "profile_warning", detail: {code, toml_path}, source: "profiles"}`, event-schema.md §2.28). The tests in §9 assert on the `Display` prefix `<code> at <file-basename>:<toml_path>`.
 
 ### 7.4 Placeholders
 
@@ -859,7 +859,7 @@ Blocks 1–3 are read once, at session start (and again at resume, since a resum
 
 ### 8.4 Hashing
 
-The assembled system prompt string is part of the request body and is therefore covered by `request_hash` as event-schema.md defines it (the hash of the canonical request: model id, system prompt, messages, tool schemas, sampling parameters). In addition, every `ModelCall` event carries `prompt_blocks: [{ kind: model|role|agents_md|skills|notebook, hash }]`, where `hash` is `b3` of that block's UTF-8 bytes *after* header prefixing. This is what lets the provenance projector (P3.1) say "this call used role prompt X and skills Y, Z" without re-parsing the prompt.
+The assembled system prompt string is part of the request body and is therefore covered by `request_hash` as event-schema.md defines it (the hash of the canonical request: model id, system prompt, messages, tool schemas, sampling parameters). In addition, every `model_request` event carries `prompt_blocks: [{ kind: model|role|agents_md|skills|notebook, hash }]`, where `hash` is `b3` of that block's UTF-8 bytes *after* header prefixing. This is what lets the provenance projector (P3.1) say "this call used role prompt X and skills Y, Z" without re-parsing the prompt.
 
 ---
 
@@ -1101,7 +1101,7 @@ allow = ["read"]
 ```
 Expected: `E_VALUE_RANGE at default.toml:agent.context_budget_tokens: must be > 0`
 
-(The same test covers `spill_cap_bytes = 0`, `sandbox.timeout_s = 0`, `model.context_length = 0`, `compaction.target = 0.9` with `trigger_at = 0.8`, `model.temperature = 3.0`.)
+(The same test covers `spill_cap_bytes = 0`; values above 1 MiB are not a validator error but are clamped by the kernel with `warning{class: "spill_cap_clamped"}`, kernel-interface.md §7.4; `sandbox.timeout_s = 0`, `model.context_length = 0`, `compaction.target = 0.9` with `trigger_at = 0.8`, `model.temperature = 3.0`.)
 
 **14. Hidden eval set under the workdir**
 
@@ -1381,7 +1381,7 @@ path = "${home}/notes.md"
 ```
 Expected: `E_CAP_EXCEEDS_GRANTS at default.toml:notebook.path: requires 'fs.rw:${home}/notes.md'`
 
-Warnings that P1.8 also tests (as `warns_<slug>`): `W_AGENTS_MD_MISSING`, `W_NET_MASKED` (a `net:` atom with `sandbox.network = false`), `W_SKILL_PATH_MISSING`, `W_PROFILE_DRIFT` (P5.1; emitted as the `ProfileDrift` event).
+Warnings that P1.8 also tests (as `warns_<slug>`): `W_AGENTS_MD_MISSING`, `W_NET_MASKED` (a `net:` atom with `sandbox.network = false`), `W_SKILL_PATH_MISSING`, `W_PROFILE_DRIFT` (P5.1; emitted as `warning{class: "profile_drift"}`).
 
 ---
 
@@ -1555,6 +1555,7 @@ Property tests (P1.1): reflexive; transitive; antisymmetric up to normalization;
 6. **Stand-in model id (§2.8).** `stand-in/default` as a LiteLLM route so the CI model can change without a profile change. P0.5 must configure that route name. Alternative: the real model name, at the cost of a hash change every time CI's model changes.
 7. **Project overrides of `tool_descriptions` and `model.temperature` (§4.2).** Allowed here as "values". If the reviewer wants the model axis fully sealed from the workdir, move those rows to forbidden.
 8. **`sandbox.network = false` with `net:` grants (§3.9).** Specified as a warning plus masking, not an error, so a project override can switch the network off without also rewriting `grants`. Confirm the warning is enough.
+8b. **Provider retry keys.** This version defines no `provider.retry.*` keys; the kernel's `RetryPolicy` default (5 attempts, 500 ms base, ×2, 30 s cap, full jitter, 300 s per attempt; kernel-interface.md §9) applies to every session. If per-model tuning is wanted, add a `[model.retry]` table in 0.2 and map it in kernel-interface.md §7.8.
 9. **`spill_cap_bytes` default 16384 (§1.4).** Roughly 4k tokens against a 40k budget. Not derived from measurement; P2.9 should revisit.
 10. **Middleware `config` replaced, not deep-merged, on override (§6.3).** Chosen so a middleware never receives a config union it did not anticipate. This is a narrow reading of D7's "tables deep-merge"; confirm it does not need an ADR.
 11. **`AGENTS.md` read once per session (§8.3).** Keeps model calls reproducible from the checkpoint; the cost is that an agent editing `AGENTS.md` sees the effect only after resume. Alternative: re-read per turn and log its hash per call.

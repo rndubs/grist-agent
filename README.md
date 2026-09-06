@@ -11,7 +11,7 @@ A minimal, embeddable, self-improvable agent kernel for simulation and engineeri
 
 ## Status
 
-Phase 0 (spikes) is in progress: P0.0 repository foundations are done. See the progress summary at the top of the implementation plan.
+Phase 0 (spikes) is in progress: P0.0 and P0.3 are done; P0.2 and P0.5 are built and wait on CI and human-run endpoints; P0.1 waits on the HPC login node. The three P1.0 interface specs are drafted under `docs/specs/` and await human review. See the progress summary at the top of the implementation plan.
 
 ## Building
 
