@@ -33,7 +33,7 @@ This file is the single source of truth for progress. Update it in the same PR a
 | Phase | Name | Status | Milestones done | Exit criteria met |
 |---|---|---|---|---|
 | P0 | Spikes (de-risk before design freeze) | in progress | 2 / 6 | no |
-| P1 | Kernel + local daemon | in progress | 5 / 10 done (P1.0, P1.1, P1.2, P1.5, P1.6); P1.3, P1.7 landed pending cross-milestone tests | no |
+| P1 | Kernel + local daemon | in progress | 6 / 10 done (P1.0, P1.1, P1.2, P1.5, P1.6, P1.8); P1.3, P1.7 landed pending cross-milestone tests | no |
 | P2 | Extensions and specialization | not started | 0 / 9 | no |
 | P3 | Provenance and orchestration | not started | 0 / 7 | no |
 | P4 | Evolve loop | not started | 0 / 7 | no |
@@ -212,16 +212,16 @@ Depends on P0.1 / ADR-0002.
 - [x] Python REPL as a `Session` tool per ADR-0001, inside the inner sandbox
 - [x] Tests: `fs.ro` tool cannot write (`tools::write_under_a_read_only_policy_is_denied`, and `bwrap::fs_ro_mount_refuses_a_write_and_rw_allows_it` 🧑 bwrap host); tool without `net` cannot open a socket (`bwrap::network_off_cannot_open_a_socket` 🧑 bwrap host); timeout enforced (`none_backend::timeout_is_enforced_and_the_process_is_gone`, `session::per_call_timeout_kills_the_process`); tool env contains no API key (`none_backend::none_env_scrubbed`, `policy_args::env_is_scrubbed_to_the_allowlist_with_home_forced`); `run_script` future yields the exit outcome without polling (`tools::sandboxed::run_script_returns_a_task_and_the_future_yields_the_exit_outcome`); the kernel-level suspend/resume cycle is asserted with P1.2/P1.4
 
-### P1.8 — `profiles` crate and catalog — `not started`
+### P1.8 — `profiles` crate and catalog — `done`
 
-- [ ] TOML schemas per `docs/specs/profile-schema.md` (D7): model profile (system prompt variant, tool-description phrasings, `tool_format`, thinking/temperature defaults, context length, compaction thresholds, quirks, optional `trained_against_profile_hash`), agent profile (capability bundles, MCP servers, skills, `AGENTS.md`, sub-agent definitions, middleware entries with priority, memory module, sandbox policy, eval set pointer, `context_budget_tokens` default 40000 (D16)), project overrides
-- [ ] Bundles file mapping `meshing`, `solver`, `post`, and HPC in-house tool grants (`Fs{<install path>, ro}` + `Proc{sbatch}`) to atoms (D6, D9)
-- [ ] Resolution: `kernel defaults + model profile + agent profile + project overrides` with the D7 merge rules and priority-sorted middleware chain
-- [ ] System prompt assembly in the D7 block order
-- [ ] **Validator:** unknown keys, kernel-only keys, and capabilities exceeding grants are rejected; tests for each
-- [ ] Every loaded profile is content-hashed; hashes recorded in `State` and in a `ProfileLoad` event
-- [ ] Catalog: registry of task agents = (model profile, agent profile) pairs, addressable by name
-- [ ] One default agent (four base tools + `run_script` + Python REPL) shipped in-repo
+- [x] TOML schemas per `docs/specs/profile-schema.md` (D7): model profile (system prompt variant, tool-description phrasings, `tool_format`, thinking/temperature defaults, context length, compaction thresholds, quirks, optional `trained_against_profile_hash`), agent profile (capability bundles, MCP servers, skills, `AGENTS.md`, sub-agent definitions, middleware entries with priority, memory module, sandbox policy, eval set pointer, `context_budget_tokens` default 40000 (D16)), project overrides
+- [x] Bundles file mapping `meshing`, `solver`, `post`, and HPC in-house tool grants (`Fs{<install path>, ro}` + `Proc{sbatch}`) to atoms (D6, D9)
+- [x] Resolution: `kernel defaults + model profile + agent profile + project overrides` with the D7 merge rules and priority-sorted middleware chain
+- [x] System prompt assembly in the D7 block order
+- [x] **Validator:** unknown keys, kernel-only keys, and capabilities exceeding grants are rejected; tests for each (`crates/profiles/tests/validator.rs`: all 33 §9 cases and sub-cases, plus the four `warns_*`)
+- [x] Every loaded profile is content-hashed; hashes recorded in `State` and in a `ProfileLoad` event
+- [x] Catalog: registry of task agents = (model profile, agent profile) pairs, addressable by name
+- [x] One default agent (four base tools + `run_script` + Python REPL) shipped in-repo (`profiles/`; `tests/shipped.rs` resolves it end to end)
 
 ### P1.9 — Protocol server and first client — `not started`
 
@@ -596,3 +596,4 @@ From §15 of the dev plan.
 | 2026-09-06 | P1.3 log landed: `FileEventLog` (JSONL, fsync on checkpoints, torn-tail tolerance, seq/session/schema validation), one writer path with the writer-side redaction pass for both logs, restore with hash verification and migrations, log-level recovery tests, the §4.4 redaction corpus and the D10 acceptance test (52 tests). Kernel-level suspend/resume and recovery tests follow P1.2. Clarifications recorded in `event-schema.md` §1 as **[clarified in P1.3]**. |
 | 2026-09-06 | P1.7 `sandbox` landed: `BwrapBackend` (pure `policy_to_args` against the P0.1 inner shape), `NoneBackend` behind `dev-sandbox-none` with a CI-asserted absence from default builds, `JsonRpcSession` (newline JSON-RPC 2.0, SIGTERM→SIGKILL), the six base tools incl. `run_script` (Task + in-process waker future) and the Python REPL; 57 tests, 5 need a bwrap host. Clarifications recorded in `kernel-interface.md` §3.12 as **[clarified in P1.7]**. |
 | 2026-09-06 | P1.2 loop landed in `crates/kernel/src/loop_/`: `Kernel`, `KernelHandle`, the §6 turn with every cancellation check point, the D1/D2 state machines, retry with full jitter, kernel spill, ingress redaction, chain resolution, registry enforcement, in-process waker, `open` with resume/recovery/migration; 60 loop tests. Clarifications recorded in `kernel-interface.md` §7 as **[clarified in P1.2]**. |
+| 2026-09-06 | P1.8 `profiles` landed with the in-repo `profiles/` tree (catalog, bundles, `stand-in` model, `default` agent): per-file validation with exact TOML paths, D7 merge, bundle and placeholder expansion, symbolic `resolved_profile_hash`, narrowing checks, prompt assembly, `KernelInputs` for the launcher; 63 tests. Clarifications recorded in `profile-schema.md` §13 as **[clarified in P1.8]**. |

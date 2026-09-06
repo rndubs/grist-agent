@@ -1545,6 +1545,19 @@ Property tests (P1.1): reflexive; transitive; antisymmetric up to normalization;
 
 ---
 
+## 12a. Implementation clarifications **[clarified in P1.8]**
+
+1. `[tools].allow` is required *after merge*; layer 0 supplies `allow = []`, so an agent file omitting `[tools]` inherits the empty list rather than failing `E_MISSING_KEY`.
+2. The `env_allow` secret-name check uses the kernel's `SECRET_LIKE_ENV` (which includes `AUTH`, absent from the §3.9 regex), so a profile that validates never fails later in `derive_policy_with`.
+3. A text source is a string, `{ text = … }`, or `{ file = … }`; the `E_TEXT_SOURCE` message reads "exactly one of 'text' or 'file'".
+4. §9 case 14 (second form) and case 15 (second form) are exercised with base grants that satisfy the default tools, so that only the intended error fires.
+5. The loader emits the four §7.2 step-11 `ProfileLoad` events; the catalog's hash is exposed as `Resolved.catalog_hash`, not as a `profile_load{kind: catalog}` event in P1.
+6. `tool_call_parser` is validated against `Registry.parsers` (its syntax), not required in `Registry.middleware`.
+7. A project entry that names a model-slot or kernel entry fails as `E_PRIORITY_RANGE at agent.toml:middleware[i].name`.
+8. Diagnostics without a file (runtime overrides) display as `<code> at <toml_path>: <message>`.
+9. A placeholder not at the start of the string is `E_MALFORMED_ATOM` in atoms and `E_PATH_NOT_ABSOLUTE` in path fields; placeholder names are checked per file (step 2), `${install:<tool>}` keys at expansion (step 7).
+10. `notebook.max_tokens` truncation, sub-agent definition frontmatter parsing, and `ToolDecl.kind` checks are P2 concerns and are carried but not applied.
+
 ## 13. Open questions for the human reviewer
 
 1. **Hash before or after placeholder expansion (§7.2 step 6, §7.6).** This spec hashes the *symbolic* resolved profile so the same profile hashes identically in every checkout and the machine binding lives in `sandbox_policy_hash`. The alternative — hashing expanded paths — makes provenance more literal but makes every fine-tune drift check and every cross-machine eval comparison fail spuriously. Confirm.

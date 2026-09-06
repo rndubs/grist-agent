@@ -1,0 +1,35 @@
+schema_version = 1
+
+[agent]
+name = "default"
+description = "General-purpose coding and scripting agent for a single checkout."
+context_budget_tokens = 40000
+spill_cap_bytes = 16384
+agents_md = "${workdir}/AGENTS.md"
+
+[agent.role_prompt]
+file = "default.role.md"
+
+[capabilities]
+grants = ["fs.rw:${workdir}", "proc:bash", "proc:python3"]
+
+[tools]
+allow = ["read", "write", "edit", "bash", "run_script", "python"]
+
+[skills]
+paths = ["${workdir}/.grist/skills"]
+
+[memory]
+module = "none"
+
+[sandbox]
+backend = "bwrap"
+timeout_s = 600
+scratch_tmpfs_mb = 256
+env_allow = ["PATH", "HOME", "LANG", "LC_ALL", "TERM", "TZ"]
+network = false
+
+[notebook]
+path = "${workdir}/.grist/notebook.md"
+inject_on_resume = true
+max_tokens = 4000

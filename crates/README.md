@@ -23,7 +23,7 @@ These rules are binding. `kernel` enforces its own rule with a test
    - `ext` → `sandbox` (out-of-process tools run under the sandbox launchers, P2.1)
    - `orchestrator` → `sandbox`, `host` (outer bwrap, remote host client, P3.3)
    - `evolve` → `provenance`, `profiles`, `orchestrator` (archive, candidates, eval runs, P4)
-   - `profiles` → `sandbox` (capability bundles expand to atoms the sandbox understands, P1.8)
+   - `profiles` → `sandbox` (reserved; P1.8 needed only `kernel::derive_policy_with` and `Capability`, so the edge is not used yet)
    Add a new edge here in the same PR that introduces it.
 
 ```
@@ -55,6 +55,12 @@ These rules are binding. `kernel` enforces its own rule with a test
 
 The `ui` client (Tauri app / web build) is not a workspace crate; it lands in P1.9
 under its own directory once ADR-0004 picks the wire format.
+
+## Content directories
+
+`profiles/` at the repository root holds the mutable profile content (`catalog.toml`,
+`bundles.toml`, `models/`, `agents/`) that `crates/profiles` loads; `crates/sandbox/src/tools/`
+holds the six base tools (P1.7) until the `ext` API lands in P2.1.
 
 ## Spikes
 
