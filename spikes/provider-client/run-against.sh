@@ -21,7 +21,10 @@
 # observed quirk row. Rows are appended to $OUT/quirks.md, JSON to $OUT/<label>.json.
 # Exit code is non-zero if a required scenario failed on any endpoint.
 set -euo pipefail
-cd "$(dirname "$0")"
+# Absolute path to this script: the `standin` target re-invokes it after the cd below,
+# and $0 may be relative to the caller's directory (as in CI).
+self="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+cd "$(dirname "$self")"
 
 target="${1:-}"
 [ -n "$target" ] || { sed -n '2,20p' "$0"; exit 64; }
@@ -74,9 +77,9 @@ case "$target" in
     run_one fake-hermes   hermes   "http://$addr/hermes"   fake-model
     ;;
   standin)
-    "$0" standin-llamacpp; rc1=$?
+    rc1=0; "$self" standin-llamacpp || rc1=$?
     mv "$OUT/quirks.md" "$OUT/quirks-llamacpp.md"
-    "$0" standin-litellm;  rc2=$?
+    rc2=0; "$self" standin-litellm || rc2=$?
     cat "$OUT/quirks-llamacpp.md" "$OUT/quirks.md" > "$OUT/quirks-all.md" && mv "$OUT/quirks-all.md" "$OUT/quirks.md"
     exit $(( rc1 || rc2 ))
     ;;
