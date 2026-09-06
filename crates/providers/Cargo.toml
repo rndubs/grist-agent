@@ -10,6 +10,22 @@ description = "Model clients. v0: one OpenAI-compatible client with per-endpoint
 
 [dependencies]
 kernel.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+async-trait.workspace = true
+futures-core.workspace = true
+futures-util.workspace = true
+bytes.workspace = true
+base64.workspace = true
+
+[dev-dependencies]
+reqwest.workspace = true
+
+[features]
+# Integration tests against the P0.5 stand-in stack (reads STANDIN_* from the environment).
+standin-integration = []
 
 [lints]
 workspace = true

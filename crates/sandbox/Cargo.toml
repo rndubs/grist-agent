@@ -10,6 +10,22 @@ description = "Inner bwrap policy derivation from capability declarations; Sandb
 
 [dependencies]
 kernel.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+async-trait.workspace = true
+futures-core.workspace = true
+futures-util.workspace = true
+nix.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[features]
+# D14: the `None` backend runs tools WITHOUT isolation; development builds only. A release
+# build of this crate MUST NOT contain it.
+dev-sandbox-none = []
 
 [lints]
 workspace = true

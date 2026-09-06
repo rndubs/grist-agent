@@ -20,9 +20,12 @@ blake3.workspace = true
 futures-core.workspace = true
 regex.workspace = true
 ryu-js.workspace = true
+uuid.workspace = true
+rand.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true

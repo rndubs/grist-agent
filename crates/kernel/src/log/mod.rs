@@ -9,7 +9,9 @@ use crate::event::{CheckpointPayload, Event, EventBody, RecoveredPayload};
 use crate::hash::Hash;
 use crate::state::{Migrated, MigrationError, MigrationRegistry, state_hash_of_raw};
 
+pub mod file;
 pub mod memory;
+pub use file::FileEventLog;
 pub use memory::MemoryEventLog;
 
 /// Append-only writer. One log per session; never rewritten.
