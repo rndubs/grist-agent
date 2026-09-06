@@ -115,9 +115,11 @@ scope), not to the invocation token, so a cancelled turn leaves it running (§7.
 
 `cargo test -p sandbox --all-features`. Everything runs on a plain Linux host with `bash` and
 `python3`; the tests in `tests/bwrap.rs` skip (printing `skipping: bwrap not available`) when
-`bwrap` is not on `PATH`. They were first run for real on 2026-09-06 in a Debian bookworm
-container (bwrap 0.8.0, Python 3.11) under a rootless Podman machine (kernel 7.1.8); that run
-found and fixed the tmpfs/mount ordering above. A container is a legitimate host for these
+`bwrap` is not on `PATH`, unless `GRIST_REQUIRE_BWRAP=1`, which turns the skip into a failure.
+The CI `test` job installs `bubblewrap` and sets that variable, so the five run on every PR.
+They were first run for real on 2026-09-06 in a Debian bookworm container (bwrap 0.8.0,
+Python 3.11) under a rootless Podman machine (kernel 7.1.8); that run found and fixed the
+tmpfs/mount ordering above. A container is a legitimate host for these
 assertions, but it is not the HPC login node: ADR-0002 still waits on the P0.1 run there.
 
 Running the whole workspace on macOS trips three host assumptions in test harnesses

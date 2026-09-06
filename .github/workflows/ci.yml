@@ -58,7 +58,18 @@ jobs:
         with:
           toolchain: 1.94.1
       - uses: Swatinem/rust-cache@v2
+      # The runner is a VM, so `bwrap` can create user namespaces here (unlike a container job).
+      # P1.7's five `bwrap` tests must run, not skip: GRIST_REQUIRE_BWRAP=1 turns their skip
+      # into a failure (same convention as GRIST_REQUIRE_STANDIN in the stand-in job).
+      - name: Install bubblewrap
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq bubblewrap
+          bwrap --version
+          cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || true
+          bwrap --unshare-user --unshare-pid --unshare-net --ro-bind / / --proc /proc --dev /dev --tmpfs /tmp -- true && echo "userns + proc mount ok"
       - run: cargo test --workspace --all-features
+        env:
+          GRIST_REQUIRE_BWRAP: "1"
 
   msrv:
     name: MSRV build

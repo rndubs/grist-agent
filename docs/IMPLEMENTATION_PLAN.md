@@ -32,7 +32,7 @@ This file is the single source of truth for progress. Update it in the same PR a
 
 | Phase | Name | Status | Milestones done | Exit criteria met |
 |---|---|---|---|---|
-| P0 | Spikes (de-risk before design freeze) | in progress | 2 / 6 | no |
+| P0 | Spikes (de-risk before design freeze) | in progress | 3 / 6 (P0.0, P0.3, P0.5); P0.1, P0.2, P0.4 wait on humans and the login node | 2 / 5 |
 | P1 | Kernel + local daemon | in progress | 9 / 10 done (P1.0–P1.8); P1.9 not started | 4 / 5 (soft freeze is a 🧑 decision at exit) |
 | P2 | Extensions and specialization | not started | 0 / 9 | no |
 | P3 | Provenance and orchestration | not started | 0 / 7 | no |
@@ -102,12 +102,12 @@ Scope narrowed by D8: middleware and first-party tools are compiled Rust; this s
 - [x] Update the dev plan (§3, §4, §8, §11) with anything the spikes changed and with D1–D20; bump to v0.2 (2026-09-06; §5, §6, §13–§15 refreshed too; the specs are named as the normative surface)
 - [ ] 🧑 Freeze the crate list and the `kernel` public surface for P1
 
-### P0.5 — CI stand-in stack — `in progress` (fake Slurm and mock solver tested locally; container pieces authored and wired into the `standin` CI job, which must go green once before they are ticked)
+### P0.5 — CI stand-in stack — `done` (every piece tested: fake Slurm and mock solver self-tests on every PR, the two containers proven green in the opt-in `standin` job on PR #4)
 
 Per D18 and D9. Everything agents need to run integration tests without GPUs, cluster access, or in-house tools.
 
-- [ ] llama.cpp server container with a small tool-calling model, exposed as an OpenAI-compatible endpoint
-- [ ] LiteLLM proxy container routing `stand-in/<model>` to it
+- [x] llama.cpp server container with a small tool-calling model, exposed as an OpenAI-compatible endpoint (`ghcr.io/ggml-org/llama.cpp:server-b10818` + Qwen2.5-1.5B-Instruct GGUF in `standin/compose.yaml`; green in the `standin` job on PR #4, run 34017081578)
+- [x] LiteLLM proxy container routing `stand-in/<model>` to it (`ghcr.io/berriai/litellm:v1.99.1` + `standin/litellm/litellm_config.yaml`; same run)
 - [x] Fake `sbatch` / `squeue` / `scancel` scripts: run the job in the background, write a Slurm-like log, call the epilog hook on exit (`standin/slurm/`, 55 self-test assertions)
 - [x] Mock in-house solver: a script at a fixed "install path" that consumes an input deck, sleeps, and emits a plausible log with convergence lines, timings, and a controllable failure mode (`standin/solver/`, 33 self-test assertions)
 - [x] Docker/Podman compose file bringing all four up; **opt-in** CI job (label `ci:standin` or manual, D18 as amended); proven green on PR #2 with the P0.2 client as its first consumer. The P1.5 integration tests plug into the marked hook step when they exist.
@@ -117,8 +117,8 @@ Per D18 and D9. Everything agents need to run integration tests without GPUs, cl
 
 - [ ] Sandbox spike green on the HPC login node under the site uid map, or a fallback chosen and documented in ADR-0002
 - [ ] Provider spike green against vLLM, LiteLLM, and the llama.cpp stand-in, including tool calling and the reasoning field
-- [ ] Out-of-process tool mechanism chosen and written up as ADR-0001
-- [ ] CI stand-in stack runs in CI
+- [x] Out-of-process tool mechanism chosen and written up as ADR-0001 (accepted 2026-09-06)
+- [x] CI stand-in stack runs in CI (`standin-scripts` on every PR; the opt-in `standin` job green on PR #2 and PR #4)
 - [ ] All three spike write-ups merged under `docs/spikes/`
 
 ---
@@ -210,7 +210,7 @@ Depends on P0.1 / ADR-0002 for the *final* inner shape; the mapping is one pure 
 - [x] Base tools: `read`, `write`, `edit` (in-process via Host policy checks), `bash` (Stateless, bwrap)
 - [x] `run_script` tool returning a `Task`, plus the in-kernel process-exit waker that completes it (D1)
 - [x] Python REPL as a `Session` tool per ADR-0001, inside the inner sandbox
-- [x] Tests: `fs.ro` tool cannot write (`tools::write_under_a_read_only_policy_is_denied`, and `bwrap::fs_ro_mount_refuses_a_write_and_rw_allows_it`, passing on a bwrap host); tool without `net` cannot open a socket (`bwrap::network_off_cannot_open_a_socket`, passing on a bwrap host); timeout enforced (`none_backend::timeout_is_enforced_and_the_process_is_gone`, `session::per_call_timeout_kills_the_process`); tool env contains no API key (`none_backend::none_env_scrubbed`, `policy_args::env_is_scrubbed_to_the_allowlist_with_home_forced`); `run_script` future yields the exit outcome without polling (`tools::sandboxed::run_script_returns_a_task_and_the_future_yields_the_exit_outcome`); the kernel-level suspend/resume cycle completes without polling in context (`crates/orchestrator/tests/exit_criteria.rs::run_script_session_suspends_and_the_process_exit_waker_resumes_it`)
+- [x] Tests: `fs.ro` tool cannot write (`tools::write_under_a_read_only_policy_is_denied`, and `bwrap::fs_ro_mount_refuses_a_write_and_rw_allows_it`, run on every PR by the CI `test` job under `GRIST_REQUIRE_BWRAP=1`); tool without `net` cannot open a socket (`bwrap::network_off_cannot_open_a_socket`, same); timeout enforced (`none_backend::timeout_is_enforced_and_the_process_is_gone`, `session::per_call_timeout_kills_the_process`); tool env contains no API key (`none_backend::none_env_scrubbed`, `policy_args::env_is_scrubbed_to_the_allowlist_with_home_forced`); `run_script` future yields the exit outcome without polling (`tools::sandboxed::run_script_returns_a_task_and_the_future_yields_the_exit_outcome`); the kernel-level suspend/resume cycle completes without polling in context (`crates/orchestrator/tests/exit_criteria.rs::run_script_session_suspends_and_the_process_exit_waker_resumes_it`)
 
 ### P1.8 — `profiles` crate and catalog — `done`
 
@@ -609,3 +609,4 @@ From §15 of the dev plan.
 | 2026-09-06 | **ADR-0004 accepted**: adopt ACP v2 on both legs (unix socket to the supervisor, stdio to the one-session kernel), `_grist/*` for the twelve log-facing event kinds and the `Tool`/`Task` cancel scopes, `grist-connect` as the stdio↔socket forwarder, Zed as the blessed first client with the Tauri shell deferred to P3, and `_grist/event` as an opt-in per-session subscription whose security boundary is the socket (D11), not a per-kind filter. The maintainer delegated the four open questions; the resolutions are recorded in the ADR. Open question §15.2 is closed; P1.9's first box ticks with this PR.
 | 2026-09-06 | **P1.7 done.** The five `bwrap` tests were run for the first time on a real bwrap host: a Debian bookworm container (rust 1.94.1, bubblewrap 0.8.0, Python 3.11.2) under a rootless Podman 6.1.1 machine (Fedora CoreOS, kernel 7.1.8-200.fc44.aarch64, crun 1.29.1, SELinux enforcing; the container needed `--security-opt label=disable --security-opt unmask=ALL` for the inner `--proc` mount). First run: 3 / 5, both failures `bwrap: Can't chdir to /tmp/.tmpXXXX: No such file or directory`, a real bug in `policy_to_args`: the scratch `--tmpfs /tmp` came after the policy mounts and shadowed a mount under `/tmp`. Fixed by emitting the tmpfs before the mounts (`bwrap.rs`, README table, new pure test `policy_args::scratch_tmpfs_precedes_the_policy_mounts_so_a_mount_under_tmp_wins`); second run 5 / 5, and `cargo test --workspace --all-features` in the same container: 384 passed, 0 failed, with clippy and fmt clean. A container inside a Podman machine is a legitimate host for these assertions (read-only mount refuses a write, no-net cannot open a socket, timeout kills the process, env scrubbed, PID 1-ish session survives SIGTERM→SIGKILL) but it is **not** the HPC site: P0.1 and ADR-0002 are unchanged and still need the login node. |
 | 2026-09-06 | P0.1 spike scripts rehearsed end to end under the same local Podman machine, purely to debug them; no results recorded in `docs/spikes/sandbox-nesting.md`. Fixed: GNU-only `date -Is`; `VARIANT=keep-ns` was unrunnable (`--userns` and `--uidmap` are mutually exclusive) and now replaces the site map; new composable `unmask` and `label-disable` variants (both were needed on this host: Podman's masked `/proc` paths give EPERM on the inner `--proc`, SELinux gives EACCES first); the inner battery's pid-namespace check counted `/proc` entries from a forking command substitution and now checks `$$`; `results/` and `work/` git-ignored. With `VARIANT=label-disable,unmask` steps 10–40 all PASS locally. Smoke part (c) also run inside the compose `slurm` service via `podman-compose` (all checks passed), closing the one smoke part that cannot run natively on macOS. |
+| 2026-09-06 | The five `bwrap` tests now run on every PR: the CI `test` job installs `bubblewrap` on the ubuntu VM runner and sets `GRIST_REQUIRE_BWRAP=1`, which turns their skip into a failure (`crates/sandbox/tests/bwrap.rs`, same convention as `GRIST_REQUIRE_STANDIN`). P1.7's tested properties are continuously asserted rather than verified once by hand. Ticked four boxes that were already true on `main`: P0.5's two containers (green in the `standin` job on PR #4) and the Phase 0 exit criteria for ADR-0001 (accepted) and the stand-in stack running in CI; P0.5 set to `done`. |
