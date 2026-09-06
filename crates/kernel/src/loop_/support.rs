@@ -84,13 +84,6 @@ impl Registrar {
         lock(&self.watched).contains(id)
     }
 
-    /// True iff a not-yet-finished future is registered for `id`.
-    pub(super) fn is_live(&self, id: &TaskId) -> bool {
-        lock(&self.wakers)
-            .get(id)
-            .is_some_and(|jh| !jh.is_finished())
-    }
-
     /// Drop the future registered for `id`, if any.
     pub(super) fn abort(&self, id: &TaskId) {
         if let Some(jh) = lock(&self.wakers).remove(id) {

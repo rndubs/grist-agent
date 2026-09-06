@@ -963,9 +963,15 @@ impl Kernel {
     fn suspension(&self) -> Suspension {
         let mut ids: Vec<TaskId> = self.state.open_tasks().map(|t| t.id.clone()).collect();
         ids.sort();
-        let in_process_wakers = ids
-            .iter()
-            .filter(|id| self.sh.registrar.is_live(id))
+        // Open tasks whose waker was registered in this process, whether or not that future has
+        // already resolved: a resolved-but-undelivered `TaskUpdate` is queued in this process's
+        // inbox and is lost if the launcher lets the process exit. Counting only still-live futures
+        // raced against fast-exiting scripts and made `suspended.in_process_wakers` differ between
+        // a recording and its replay (seen as a CI flake in the P1 exit-criteria replay test).
+        let in_process_wakers = self
+            .state
+            .open_tasks()
+            .filter(|t| t.in_process_waker)
             .count();
         Suspension {
             pending_task_ids: ids,
