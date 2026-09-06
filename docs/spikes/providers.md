@@ -92,6 +92,68 @@ First run on PR #2, both endpoints, all required scenarios passing:
 
 One transport finding, fixed in the client: the probe runs its scenarios sequentially on a shared `reqwest` client, and the tools request against llama.cpp once failed with `error sending request` right after a streamed response, while the same scenario in a fresh process passed. llama.cpp's cpp-httplib closes keep-alive connections after streamed responses and on a short idle timeout, and reqwest does not retry a POST on a stale pooled connection. The client now sets `pool_max_idle_per_host(0)`, the probe retries once on a transport error and records that it did, and `Error::Transport` carries the full cause chain. **P1.5 consequence:** classify connection errors that occur before any response bytes as retryable (kernel-interface.md already does), and do not rely on keep-alive reuse against llama.cpp.
 
+### 2.4 What a local native stand-in observed (2026-09-06, macOS/arm64)
+
+Run on a workstation with **no container engine**, so the two model services were run
+natively instead of from the pinned images (`docs/standin.md` "Without a container
+engine"). Everything else — `standin/.env`, `up.sh --print-env`, `smoke.sh` (a) and (b),
+the P1.5 integration tests, and this spike — is the documented path.
+
+| Piece | CI pin | What ran here |
+|---|---|---|
+| llama.cpp server | image `server-b10818` | Homebrew `llama-server` **b9290** (`bcfd1989e`), same flags as `compose.yaml` (`--jinja --ctx-size 8192 --parallel 2 --n-predict 1024 --alias …`), Metal instead of CPU |
+| LiteLLM proxy | image `v1.99.1` | `uvx --from 'litellm[proxy]==1.99.0'` (1.99.1 is an image tag with no PyPI release), `standin/litellm/litellm_config.yaml` with `api_base` pointed at `127.0.0.1` |
+| Models | Qwen2.5-1.5B-Instruct Q4_K_M | the same, plus **Qwen3-1.7B Q8_0** on a second port for the reasoning row |
+
+`standin/smoke.sh` parts (a) and (b) passed unchanged (tool call through LiteLLM on the
+first attempt, 16 SSE chunks, `[DONE]`, usage in the final chunk). Part (c) does not run
+on macOS: the fake Slurm needs `setsid`, `flock` and bash ≥ 4, i.e. a Linux userland — it
+is covered by the always-on `standin-scripts` CI job.
+
+Scenarios (`spikes/provider-client/run-against.sh standin`, both endpoints, all required
+scenarios passing on both models):
+
+| Scenario | Qwen2.5-1.5B (llama.cpp direct / via LiteLLM) | Qwen3-1.7B (llama.cpp direct / via LiteLLM) |
+|---|---|---|
+| plain / stream | pass, 5 chunks, usage in the final chunk / same, LiteLLM adds `reasoning_tokens: 0` | pass, 151 chunks / same, LiteLLM reports `reasoning_tokens: 139` |
+| reasoning | no field, `thinking_len=0` (optional for the stand-in) | `fields_seen=["reasoning_content"]`, `thinking_len=536`, streamed as `delta.reasoning_content` / identical through the proxy |
+| tools, two-turn | `get_weather({"city":"Oslo","unit":"celsius"})`, `finish_reason: tool_calls`, 15 delta chunks, grounded final answer / same | same, and the thinking block precedes the tool call |
+| structured (`json_schema`) | honored / honored | honored / honored |
+
+Observed quirk rows as the probe printed them:
+
+```
+| endpoint | reasoning_field | tool_format | supports_structured_output | supports_stream_usage | auth | strict_tool_schema | sends_finish_reason_tool_calls | streams_tool_call_fragments |
+| standin-llamacpp (observed, qwen2.5-1.5b-instruct) | none | native | yes | true | none | true | true | true |
+| standin-litellm  (observed, qwen2.5-1.5b-instruct) | none | native | yes | true | bearer($STANDIN_LITELLM_KEY) | true | true | true |
+| standin-llamacpp (observed, qwen3-1.7b) | reasoning_content | native | yes | true | none | true | true | true |
+| standin-litellm  (observed, qwen3-1.7b) | reasoning_content | native | yes | true | bearer($STANDIN_LITELLM_KEY) | true | true | true |
+```
+
+These match §2.3's CI rows on every flag, and the only difference between the two models
+is `reasoning_field`, which confirms the note in `docs/standin.md`: the field is absent
+because Qwen2.5 does not think, not because the endpoint drops it.
+
+**The `providers` crate on the same endpoint.** With `STANDIN_MODEL=qwen3-1.7b`,
+`crates/providers/tests/standin.rs::standin_litellm_tool_call_roundtrip_with_bearer_auth`
+(quirks `reasoning_field: ReasoningContent`) returned
+
+```
+[Thinking { text: "Okay, the user is asking for the weather in Paris right now. I need to use the
+get_weather function …", signature: None },
+ ToolUse { id: "WNTYiUcC53dX15TulEXhzmuM1x1kVS9j", name: "get_weather", input: {"city": "Paris"} }]
+```
+
+so `reasoning_content` → `ContentBlock::Thinking` holds end to end against a real
+reasoning model, not only against the fake shape (P1.5 row 3).
+
+Two upstream drifts worth knowing:
+
+- `Qwen/Qwen3-1.7B-GGUF` no longer ships `Qwen3-1.7B-Q4_K_M.gguf`; the repo now offers
+  `Qwen3-1.7B-Q8_0.gguf` (`docs/standin.md` updated).
+- LiteLLM publishes image tag `v1.99.1` but no PyPI `1.99.1`; the nearest release is
+  `1.99.0`, which behaved identically on every flag above.
+
 ## 3. What was verified here
 
 ### 3.1 Tests (all passing)
@@ -127,11 +189,11 @@ with one documented exception: the LiteLLM streaming path also has `usage.reason
 
 ## 4. Quirk-flag table
 
-Legend: `verified (fake)` = asserted by a test against the emulated shape; `verified (litellm)` = observed against the real LiteLLM 1.100.0 proxy here; `expected (docs)` = from upstream documentation, not yet observed; `verified (CI)` = observed in the `standin` CI job against the real llama.cpp `server-b10818` (Qwen2.5-1.5B-Instruct Q4_K_M) and LiteLLM `v1.99.1` (§2.3); `🧑 to verify` = needs the real endpoint.
+Legend: `verified (fake)` = asserted by a test against the emulated shape; `verified (litellm)` = observed against the real LiteLLM 1.100.0 proxy here; `expected (docs)` = from upstream documentation, not yet observed; `verified (CI)` = observed in the `standin` CI job against the real llama.cpp `server-b10818` (Qwen2.5-1.5B-Instruct Q4_K_M) and LiteLLM `v1.99.1` (§2.3); `verified (local)` = observed on 2026-09-06 against a native stand-in (llama.cpp b9290 + LiteLLM 1.99.0, Qwen2.5-1.5B and Qwen3-1.7B, §2.4); `🧑 to verify` = needs the real endpoint.
 
 | Flag | vLLM (`--enable-auto-tool-choice --tool-call-parser X --reasoning-parser Y`) | vLLM without parsers | LiteLLM proxy | llama.cpp stand-in (`llama-server --jinja`) |
 |---|---|---|---|---|
-| `reasoning_field` | `reasoning_content` — verified (fake); expected (docs: reasoning outputs page); 🧑 to verify per model/parser | `inline_think` — verified (fake); 🧑 to verify | `reasoning_content` — verified (litellm, vLLM-style upstream); 🧑 to verify for Anthropic (`thinking`) and OpenAI o-series upstreams (docs: LiteLLM normalizes both into `reasoning_content`, plus `thinking_blocks` for Anthropic) | `none` for Qwen2.5-1.5B-Instruct — verified (CI): no reasoning field arrives because the model does not think; `reasoning_content` is the documented field for models that do (`--reasoning-format deepseek` default) — verified (fake); swap in a Qwen3 GGUF (`docs/standin.md`) to observe it |
+| `reasoning_field` | `reasoning_content` — verified (fake); expected (docs: reasoning outputs page); 🧑 to verify per model/parser | `inline_think` — verified (fake); 🧑 to verify | `reasoning_content` — verified (litellm, vLLM-style upstream) and **verified (local)** as a passthrough from a llama.cpp upstream (Qwen3-1.7B, §2.4; the proxy also fills `usage.reasoning_tokens`, which the upstream leaves unset); 🧑 to verify for Anthropic (`thinking`) and OpenAI o-series upstreams (docs: LiteLLM normalizes both into `reasoning_content`, plus `thinking_blocks` for Anthropic) | `none` for Qwen2.5-1.5B-Instruct — verified (CI): no reasoning field arrives because the model does not think; `reasoning_content` for a thinking model — **verified (local)** with Qwen3-1.7B Q8_0 (`--reasoning-format auto` default): `message.reasoning_content` non-streaming and `delta.reasoning_content` streaming, `thinking_len=536`, mapped to a `Thinking` block by the `providers` crate (§2.4); also verified (fake) |
 | `tool_format` | `native` — verified (fake); 🧑 record which models need which `--tool-call-parser` (`hermes` for Qwen2.5/Qwen3/Hermes, `llama3_json` for Llama 3.x, `mistral`, `deepseek_v3`, `qwen3_coder`, …) | `parsed(hermes)` — verified (fake): `tool_choice: auto` is rejected with 400 unless `--enable-auto-tool-choice`; client renders tools into the system prompt | `native` (passthrough) — verified (litellm, CI) | `native` — verified (CI): two-turn `get_weather` call with correct JSON arguments and a grounded final answer; also verified (fake) |
 | `supports_structured_output` | `yes` — verified (fake); expected (docs: `response_format: json_schema` via guided decoding; vLLM also accepts `guided_json`) ; 🧑 to verify with a reasoning parser active | `yes` (guided decoding is independent of parsers) — expected (docs) | `unknown` (upstream-dependent) — passthrough verified (litellm); honored end-to-end for the llama.cpp upstream — verified (CI) | `yes` — verified (CI): `response_format: json_schema` honored; also verified (fake) |
 | `supports_stream_usage` | `true` — verified (fake); expected (docs) | `true` | `true` — verified (litellm); usage chunk has a non-empty `choices` (finding 3) | `true` — verified (CI): usage in the final chunk; `timings` presence verified (fake) only |
@@ -201,11 +263,11 @@ Rules that fell out of the spike:
 |---|---|
 | Minimal OpenAI-compatible client with SSE streaming | done (this spike, tested against four shapes and the real LiteLLM proxy) |
 | 🧑 vLLM endpoint: tool calling with auto-tool-choice + parser; record `parsed(<syntax>)` models | 🧑 — run §2.1 `vllm`, paste rows |
-| vLLM: `reasoning_content` captured and mapped to `Thinking` | done against the fake vLLM shape; 🧑 confirm on the real endpoint (same command) |
+| vLLM: `reasoning_content` captured and mapped to `Thinking` | done against the fake vLLM shape and against a real thinking model through llama.cpp + LiteLLM (§2.4); 🧑 confirm on the real vLLM endpoint (same command) |
 | 🧑 LiteLLM proxy with keys: `provider/model` routing; key + URL from config | 🧑 for real upstream keys; routing, key-from-env and URL-from-config verified against a local real proxy |
 | LiteLLM: reasoning field behaviour for at least one upstream | recorded for a vLLM-style upstream through LiteLLM 1.100.0 (§2.2); 🧑 for a hosted upstream |
 | Structured-output probe on both, recorded as a flag | probe built and tested; flag recorded for the fake and the local proxy; 🧑 for real vLLM / hosted upstream |
-| Same client against the P0.5 llama.cpp stand-in | done in the `standin` CI job (§2.3); rows in §4 marked `verified (CI)` |
+| Same client against the P0.5 llama.cpp stand-in | done in the `standin` CI job (§2.3) and again locally against a native stand-in incl. a reasoning model (§2.4); rows in §4 marked `verified (CI)` / `verified (local)` |
 | Table of quirk flags | §4 |
 | Write-up | this file |
 
