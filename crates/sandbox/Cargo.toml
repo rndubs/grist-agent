@@ -27,5 +27,15 @@ tempfile.workspace = true
 # build of this crate MUST NOT contain it.
 dev-sandbox-none = []
 
+# CI assertion for D14 (§3.12 of the kernel interface): this example references
+# `sandbox::NoneBackend` and can only be built with the feature. The step
+#   cargo check -p sandbox --example none_backend_symbol
+# MUST fail (cargo refuses a target whose `required-features` are missing) and
+#   cargo check -p sandbox --example none_backend_symbol --features dev-sandbox-none
+# MUST pass. See `examples/none_backend_symbol.rs` for the reasoning.
+[[example]]
+name = "none_backend_symbol"
+required-features = ["dev-sandbox-none"]
+
 [lints]
 workspace = true

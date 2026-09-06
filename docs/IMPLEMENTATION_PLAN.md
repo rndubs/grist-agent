@@ -33,7 +33,7 @@ This file is the single source of truth for progress. Update it in the same PR a
 | Phase | Name | Status | Milestones done | Exit criteria met |
 |---|---|---|---|---|
 | P0 | Spikes (de-risk before design freeze) | in progress | 2 / 6 | no |
-| P1 | Kernel + local daemon | in progress | 4 / 10 (P1.0, P1.1, P1.5, P1.6) | no |
+| P1 | Kernel + local daemon | in progress | 4 / 10 done (P1.0, P1.1, P1.5, P1.6); P1.3, P1.7 landed pending cross-milestone tests | no |
 | P2 | Extensions and specialization | not started | 0 / 9 | no |
 | P3 | Provenance and orchestration | not started | 0 / 7 | no |
 | P4 | Evolve loop | not started | 0 / 7 | no |
@@ -199,18 +199,18 @@ Depends on P0.2 / ADR-0003.
 - [x] `host::remote-client` left as a stub with a documented interface (filled in P3)
 - [ ] Kernel and tools take `&dyn Host`; nothing in `kernel` touches `std::fs` or `std::process` directly (ticked with P1.2/P1.7; the kernel's only file I/O is the event log writer, P1.3)
 
-### P1.7 — `sandbox` crate and base tools — `not started`
+### P1.7 — `sandbox` crate and base tools — `in progress` 🧑 (everything landed and tested with the `None` backend; the five `bwrap` tests skip until run on a host with `bwrap` — the login node run that also settles ADR-0002)
 
 Depends on P0.1 / ADR-0002.
 
-- [ ] `SandboxBackend` trait with `Bwrap` and `None` implementations; `None` compiles only under a `dev-sandbox-none` feature and is logged in every run (D14)
-- [ ] Inner policy type: mounts (RW/RO), tmpfs scratch, network on/off + allowlist, timeout, scrubbed environment (D10)
-- [ ] `derive_policy(tool.capabilities, profile.grants) -> Policy`, purely mechanical, no escape hatch
-- [ ] Stateless launcher: one bwrap per call. Session launcher: one bwrap process per session, calls as RPC (D5)
-- [ ] Base tools: `read`, `write`, `edit` (in-process via Host policy checks), `bash` (Stateless, bwrap)
-- [ ] `run_script` tool returning a `Task`, plus the in-kernel process-exit waker that completes it (D1)
-- [ ] Python REPL as a `Session` tool per ADR-0001, inside the inner sandbox
-- [ ] Tests: `fs.ro` tool cannot write; tool without `net` cannot open a socket; timeout enforced; tool env contains no API key; `run_script` suspend/resume cycle completes without polling in context
+- [x] `SandboxBackend` trait with `Bwrap` and `None` implementations; `None` compiles only under a `dev-sandbox-none` feature and is logged in every run (D14)
+- [x] Inner policy type: mounts (RW/RO), tmpfs scratch, network on/off + allowlist, timeout, scrubbed environment (D10)
+- [x] `derive_policy(tool.capabilities, profile.grants) -> Policy`, purely mechanical, no escape hatch
+- [x] Stateless launcher: one bwrap per call. Session launcher: one bwrap process per session, calls as RPC (D5)
+- [x] Base tools: `read`, `write`, `edit` (in-process via Host policy checks), `bash` (Stateless, bwrap)
+- [x] `run_script` tool returning a `Task`, plus the in-kernel process-exit waker that completes it (D1)
+- [x] Python REPL as a `Session` tool per ADR-0001, inside the inner sandbox
+- [x] Tests: `fs.ro` tool cannot write (`tools::write_under_a_read_only_policy_is_denied`, and `bwrap::fs_ro_mount_refuses_a_write_and_rw_allows_it` 🧑 bwrap host); tool without `net` cannot open a socket (`bwrap::network_off_cannot_open_a_socket` 🧑 bwrap host); timeout enforced (`none_backend::timeout_is_enforced_and_the_process_is_gone`, `session::per_call_timeout_kills_the_process`); tool env contains no API key (`none_backend::none_env_scrubbed`, `policy_args::env_is_scrubbed_to_the_allowlist_with_home_forced`); `run_script` future yields the exit outcome without polling (`tools::sandboxed::run_script_returns_a_task_and_the_future_yields_the_exit_outcome`); the kernel-level suspend/resume cycle is asserted with P1.2/P1.4
 
 ### P1.8 — `profiles` crate and catalog — `not started`
 
@@ -594,3 +594,4 @@ From §15 of the dev plan.
 | 2026-09-06 | P1.5 `providers` landed: one OpenAI-compatible SSE client with `Quirks` from the model profile; 41 unit tests over fake vLLM/LiteLLM/llama.cpp/Hermes shapes; stand-in integration tests behind `standin-integration`, wired into the opt-in CI job. Clarifications recorded in `docs/specs/kernel-interface.md` §3.8 as **[clarified in P1.5]**. |
 | 2026-09-06 | P1.6 `host` landed: `NativeHost` (policy-checked filesystem with symlink resolution, scrubbed-env spawn with SIGTERM→SIGKILL, allowlisted network via reqwest, secrets as handles registered with the redactor on resolve), `AskUserTool` + prompters, `remote-client` stub, endpoint-URL helper; 50 tests. Clarifications recorded in `kernel-interface.md` §3.9 as **[clarified in P1.6]**. |
 | 2026-09-06 | P1.3 log landed: `FileEventLog` (JSONL, fsync on checkpoints, torn-tail tolerance, seq/session/schema validation), one writer path with the writer-side redaction pass for both logs, restore with hash verification and migrations, log-level recovery tests, the §4.4 redaction corpus and the D10 acceptance test (52 tests). Kernel-level suspend/resume and recovery tests follow P1.2. Clarifications recorded in `event-schema.md` §1 as **[clarified in P1.3]**. |
+| 2026-09-06 | P1.7 `sandbox` landed: `BwrapBackend` (pure `policy_to_args` against the P0.1 inner shape), `NoneBackend` behind `dev-sandbox-none` with a CI-asserted absence from default builds, `JsonRpcSession` (newline JSON-RPC 2.0, SIGTERM→SIGKILL), the six base tools incl. `run_script` (Task + in-process waker future) and the Python REPL; 57 tests, 5 need a bwrap host. Clarifications recorded in `kernel-interface.md` §3.12 as **[clarified in P1.7]**. |

@@ -1224,6 +1224,8 @@ pub enum SandboxError {
 
 The `None` backend (D14) is implemented in the `sandbox` crate under the `dev-sandbox-none` feature, reports `name() == "none"`, runs commands directly via `Host::spawn` with the scrubbed env, and the kernel logs `warning{class: "sandbox_backend_none"}` at every session start and resume when it sees that name. A release build of the `sandbox` crate MUST NOT contain it (feature-gated, and a CI job asserts the symbol is absent from a default build).
 
+**[clarified in P1.7]** The `sandbox` crate's session launcher spawns the `bwrap`/direct process with `tokio::process` rather than `Host::spawn`, because JSON-RPC needs piped stdio and `ChildProcess` exposes no pipes; it uses the identical argv and scrubbed environment. `policy_to_args` is fallible (a secret-like allowlisted name is refused). `run_script` binds its child process to the registered task future (Task scope, own token and drop guard), not to the invocation token, so `cancel(Turn)` leaves open tasks untouched per §7.1; it runs `bash <path> <args>` under `proc:bash`. `HOME=/tmp` always wins; a tool's explicit `cmd.env` passes through unscrubbed. The program check accepts a verbatim or basename match. `RunScriptTool` and `base_tools` take the `SandboxBackend` at construction since the task future must be `'static`.
+
 ### 3.13 Cancellation
 
 `CancellationToken` is `tokio_util::sync::CancellationToken`, re-exported as `kernel::CancellationToken`. The kernel keeps a session token, a child token per turn, and a child token per tool invocation. `KernelHandle::cancel` cancels the matching child (§7.1).
