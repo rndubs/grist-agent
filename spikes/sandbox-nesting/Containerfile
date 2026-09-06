@@ -1,0 +1,12 @@
+# Image with bwrap for the P0.1 nesting spike. Built with the site's
+# --userns-uid-map flags (see 10-build.sh), so the image's file ownership is
+# consistent with the 2002-uid runtime map.
+FROM docker.io/library/debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends bubblewrap procps util-linux ca-certificates python3 && rm -rf /var/lib/apt/lists/*
+# bwrap must NOT be setuid inside a rootless container; make sure it isn't.
+RUN chmod u-s /usr/bin/bwrap || true
+COPY inner-tool-call.sh /usr/local/bin/inner-tool-call.sh
+COPY outer.sh /usr/local/bin/outer.sh
+RUN chmod +x /usr/local/bin/*.sh && mkdir -p /work /scratch && chmod 1777 /scratch
+WORKDIR /work
+CMD ["/bin/bash"]
