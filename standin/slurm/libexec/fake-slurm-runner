@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+# Detached per-job runner for fake-slurm. Started by sbatch via setsid+nohup.
+# Runs the batch script with a Slurm-like environment, records the final state,
+# appends Slurm's cancel/timeout trailer to the job's stdout, then invokes the
+# epilog hook if one was captured at submission time.
+set -uo pipefail
+
+here=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
+# shellcheck source=../lib/fake-slurm.sh
+source "$here/../lib/fake-slurm.sh"
+
+id="$1"
+jobdir=$(fs_jobdir "$id")
+[[ -f "$jobdir/meta" ]] || exit 1
+fs_write "$jobdir/runner.pid" "$$"
+
+meta() { fs_meta_get "$jobdir" "$1" "${2-}"; }
+name=$(meta name); user=$(meta user); partition=$(meta partition)
+workdir=$(meta workdir); stdout_path=$(meta stdout); stderr_path=$(meta stderr)
+time_limit=$(meta time_limit 0); epilog=$(meta epilog); export_mode=$(meta export ALL)
+pending=$(meta pending_seconds 0)
+
+mapfile -t script_args <"$jobdir/args"
+
+finish() {  # finish STATE EXIT_CODE
+  local state="$1" rc="$2"
+  fs_write "$jobdir/exit_code" "$rc"
+  fs_write "$jobdir/end_time" "$(fs_now)"
+  rm -f "$jobdir/child.pid" "$jobdir/child.pgid"
+  fs_write "$jobdir/state" "$state"
+}
+
+run_epilog() {  # run_epilog STATE EXIT_CODE
+  [[ -n "$epilog" ]] || return 0
+  if [[ ! -x "$epilog" ]]; then
+    echo "fake-slurm: epilog '$epilog' is not executable" >>"$jobdir/epilog.log"
+    fs_write "$jobdir/epilog.rc" 127
+    return 0
+  fi
+  local sig=0 rc="$2" uid
+  if (( rc > 128 )); then sig=$((rc - 128)); rc=0; fi
+  uid=$(meta uid)
+  (
+    cd "$workdir" 2>/dev/null || cd /
+    export SLURM_JOB_ID="$id" SLURM_JOBID="$id" SLURM_JOB_NAME="$name" \
+      SLURM_JOB_USER="$user" SLURM_JOB_UID="$uid" \
+      SLURM_JOB_PARTITION="$partition" SLURM_JOB_NODELIST="$FAKE_SLURM_NODE" \
+      SLURM_JOB_EXIT_CODE="$2" SLURM_JOB_EXIT_CODE2="$rc:$sig" \
+      SLURM_JOB_DERIVED_EC="$2" SLURM_SCRIPT_CONTEXT=epilog_slurmctld \
+      SLURM_JOB_STDOUT="$stdout_path" SLURM_JOB_STDERR="$stderr_path" \
+      SLURM_JOB_WORK_DIR="$workdir" SLURM_CLUSTER_NAME=fake \
+      FAKE_SLURM_JOB_STATE="$1" FAKE_SLURM_JOB_DIR="$jobdir" \
+      FAKE_SLURM_STATE_DIR="$FAKE_SLURM_STATE_DIR"
+    timeout -k 5 60 "$epilog"
+  ) >>"$jobdir/epilog.log" 2>&1
+  fs_write "$jobdir/epilog.rc" "$?"
+}
+
+# ---- pending phase -----------------------------------------------------------
+while (( pending > 0 )); do
+  if [[ -e "$jobdir/cancel_requested" ]]; then break; fi
+  sleep 1; pending=$((pending - 1))
+done
+if [[ -e "$jobdir/cancel_requested" ]]; then
+  # Cancelled before it started: Slurm runs no epilog for a job that never ran.
+  finish CANCELLED 0
+  exit 0
+fi
+
+# ---- run phase --------------------------------------------------------------
+mkdir -p "$(dirname "$stdout_path")" "$(dirname "$stderr_path")" 2>/dev/null || true
+cd "$workdir" 2>/dev/null || { finish FAILED 1; run_epilog FAILED 1; exit 0; }
+fs_write "$jobdir/start_time" "$(fs_now)"
+fs_write "$jobdir/state" RUNNING
+
+slurm_env=(
+  "SLURM_JOB_ID=$id" "SLURM_JOBID=$id" "SLURM_JOB_NAME=$name" "SLURM_JOB_USER=$user"
+  "SLURM_JOB_PARTITION=$partition" "SLURM_JOB_ACCOUNT=$(meta account)"
+  "SLURM_SUBMIT_DIR=$workdir" "SLURM_SUBMIT_HOST=$(hostname 2>/dev/null || echo localhost)"
+  "SLURM_JOB_NODELIST=$FAKE_SLURM_NODE" "SLURM_NODELIST=$FAKE_SLURM_NODE" "SLURMD_NODENAME=$FAKE_SLURM_NODE"
+  "SLURM_JOB_NUM_NODES=$(meta nodes 1)" "SLURM_NNODES=$(meta nodes 1)"
+  "SLURM_NTASKS=$(meta ntasks 1)" "SLURM_NPROCS=$(meta ntasks 1)"
+  "SLURM_CPUS_PER_TASK=$(meta cpus_per_task 1)" "SLURM_CPUS_ON_NODE=$(meta cpus_per_task 1)"
+  "SLURM_JOB_CPUS_PER_NODE=$(meta cpus_per_task 1)" "SLURM_TASKS_PER_NODE=$(meta ntasks 1)"
+  "SLURM_CLUSTER_NAME=fake" "SLURM_JOB_QOS=normal" "SLURM_PROCID=0" "SLURM_NODEID=0" "SLURM_LOCALID=0"
+  "SLURM_JOB_STDOUT=$stdout_path" "SLURM_JOB_STDERR=$stderr_path"
+  "FAKE_SLURM_STATE_DIR=$FAKE_SLURM_STATE_DIR"
+)
+
+cmd=("$jobdir/script")
+(( ${#script_args[@]} > 0 )) && cmd+=("${script_args[@]}")
+if (( time_limit > 0 )); then cmd=(timeout -k 5 "$time_limit" "${cmd[@]}"); fi
+
+case "$export_mode" in
+  NONE)
+    launcher=(env -i "PATH=$PATH" "HOME=${HOME:-/}" "USER=$user" "LOGNAME=$user" "SHELL=${SHELL:-/bin/sh}" "TMPDIR=${TMPDIR:-/tmp}" "${slurm_env[@]}") ;;
+  ALL|"")
+    launcher=(env "${slurm_env[@]}") ;;
+  *)
+    # --export=VAR=val,VAR2  (explicit list on top of the caller's environment)
+    extra=()
+    IFS=, read -r -a items <<<"${export_mode#ALL,}"
+    for it in "${items[@]}"; do [[ "$it" == *=* ]] && extra+=("$it"); done
+    launcher=(env "${slurm_env[@]}" "${extra[@]+"${extra[@]}"}") ;;
+esac
+
+# The script gets its own process group so scancel can kill everything it
+# spawned without touching this runner. bash without job control leaves
+# background children in our group, so setsid here does not fork.
+if [[ "$stderr_path" == "$stdout_path" ]]; then
+  setsid "${launcher[@]}" "${cmd[@]}" </dev/null >>"$stdout_path" 2>&1 &
+else
+  setsid "${launcher[@]}" "${cmd[@]}" </dev/null >>"$stdout_path" 2>>"$stderr_path" &
+fi
+child=$!
+fs_write "$jobdir/child.pid" "$child"
+# Process group of the child: /proc first (slim images have no procps), ps as fallback.
+pgid=$(awk '{print $5}' "/proc/$child/stat" 2>/dev/null || true)
+[[ -n "$pgid" ]] || pgid=$(ps -o pgid= -p "$child" 2>/dev/null | tr -d ' ' || true)
+fs_write "$jobdir/child.pgid" "${pgid:-$child}"
+
+# scancel may have raced us between the pending check and the spawn.
+if [[ -e "$jobdir/cancel_requested" ]]; then kill -TERM -- "-${pgid:-$child}" 2>/dev/null || kill -TERM "$child" 2>/dev/null; fi
+
+wait "$child"; rc=$?
+
+stamp=$(date '+%Y-%m-%dT%H:%M:%S')
+if [[ -e "$jobdir/cancel_requested" ]]; then
+  state=CANCELLED
+  printf 'slurmstepd: error: *** JOB %s ON %s CANCELLED AT %s ***\n' "$id" "$FAKE_SLURM_NODE" "$stamp" >>"$stdout_path"
+elif (( time_limit > 0 && rc == 124 )); then
+  state=TIMEOUT
+  printf 'slurmstepd: error: *** JOB %s ON %s CANCELLED AT %s DUE TO TIME LIMIT ***\n' "$id" "$FAKE_SLURM_NODE" "$stamp" >>"$stdout_path"
+elif (( rc == 0 )); then
+  state=COMPLETED
+else
+  state=FAILED
+fi
+
+finish "$state" "$rc"
+run_epilog "$state" "$rc"
+exit 0

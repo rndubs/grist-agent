@@ -1,0 +1,93 @@
+{
+  "wasmtime_version": "47.0.4",
+  "component_bytes": 23407333,
+  "precompiled_bytes": 40421640,
+  "compile_cold_ms": 3214.48906,
+  "deserialize_precompiled_ms": 3.4298699999999998,
+  "instantiate_ms": [
+    1.1972230000000001,
+    0.7818290000000001,
+    0.725609,
+    0.731545,
+    0.7381949999999999
+  ],
+  "instantiate_median_ms": 0.7381949999999999,
+  "first_call_ms": 0.606182,
+  "guest_python": "3.14.0 (main, Jul  7 2026, 21:37:34) [Clang 22.1.0-wasi-sdk (https://github.com/llvm/llvm-project 4434dabb69916856b82 platform=wasi modules=200 build_time_unavailable={'ssl': \"ModuleNotFoundError: No module named '_ssl'\", 'ctypes': \"ModuleNotFoundError: No module named '_ctypes'\", 'mmap': \"ModuleNotFoundError: No module named 'mmap'\", 'fcntl': \"ModuleNotFoundError: No module named 'fcntl'\"}",
+  "state_persists": true,
+  "error_structured": {
+    "message": "division by zero",
+    "ok": false,
+    "type": "ZeroDivisionError"
+  },
+  "latency_eval_trivial": {
+    "n": 200,
+    "min_us": 49.731,
+    "p50_us": 56.653999999999996,
+    "p95_us": 97.09400000000001,
+    "p99_us": 128.353,
+    "max_us": 206.342,
+    "mean_us": 62.58223000000005
+  },
+  "latency_info": {
+    "n": 200,
+    "min_us": 6.169,
+    "p50_us": 6.696,
+    "p95_us": 11.333,
+    "p99_us": 33.324,
+    "max_us": 48.719,
+    "mean_us": 7.582790000000006
+  },
+  "latency_eval_1mb_result": {
+    "n": 20,
+    "min_us": 3590.62,
+    "p50_us": 3687.218,
+    "p95_us": 4062.484,
+    "p99_us": 5113.043000000001,
+    "max_us": 5113.043000000001,
+    "mean_us": 3777.66305
+  },
+  "cancel": {
+    "total_ms": 501.094079,
+    "trap": "Some(Interrupt)"
+  },
+  "restart_ms": 4.46986,
+  "numpy": {
+    "available": false,
+    "error": "ModuleNotFoundError",
+    "message": "No module named 'numpy'"
+  },
+  "rss_kb_after_instantiate": 410520,
+  "rss_kb_after": 436628,
+  "probe": {
+    "error": null,
+    "value": "{'missing_modules': {'ssl': 'ModuleNotFoundError', 'ctypes': 'ModuleNotFoundError'}, 'ops': {'open_write_tmp': \"FileNotFoundError: [Errno 44] No such file or directory: '/tmp/p03_probe.txt'\", 'os_getcwd': 'ok', 'os_listdir_root': \"FileNotFoundError: [Errno 44] No such file or directory: '/'\", 'time_sleep_10ms': 'ok', 'subprocess_true': 'OSError: [Errno 58] wasi does not support processes.', 'thread_start': \"RuntimeError: can't start new thread\", 'socket_connect': 'PermissionError: [Errno 2] Permission denied', 'env': 'ok'}}"
+  },
+  "cpu_sum_squares": {
+    "n": 5,
+    "min_us": 463203.129,
+    "p50_us": 469377.92,
+    "p95_us": 491568.542,
+    "p99_us": 491568.542,
+    "max_us": 491568.542,
+    "mean_us": 475483.72699999996
+  },
+  "cpu_float_loop": {
+    "n": 5,
+    "min_us": 137338.792,
+    "p50_us": 148259.306,
+    "p95_us": 151302.676,
+    "p99_us": 151302.676,
+    "max_us": 151302.676,
+    "mean_us": 145333.66499999998
+  },
+  "cpu_dict_str": {
+    "n": 5,
+    "min_us": 221885.559,
+    "p50_us": 229961.81600000002,
+    "p95_us": 232939.93800000002,
+    "p99_us": 232939.93800000002,
+    "max_us": 232939.93800000002,
+    "mean_us": 228590.40240000002
+  }
+}

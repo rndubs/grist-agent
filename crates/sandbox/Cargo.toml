@@ -1,0 +1,15 @@
+[package]
+name = "sandbox"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "Inner bwrap policy derivation from capability declarations; SandboxBackend implementations and tool launchers."
+
+[dependencies]
+kernel.workspace = true
+
+[lints]
+workspace = true

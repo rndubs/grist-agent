@@ -1,0 +1,303 @@
+#!/usr/bin/env python3
+"""ACME Solver stand-in (P0.5, D9).
+
+A mock of an in-house simulation code installed at a fixed path
+(/opt/acme-solver). It reads a small key=value input deck, sleeps a configurable
+time per step, and prints a log that looks like a real implicit solver:
+header, per-iteration residual lines, per-step timings, a summary, and a final
+"Run status:" line. Failure modes are controlled from the deck.
+
+Exit codes
+  0  CONVERGED       every step reached the tolerance
+  1  usage or deck error (ACME-E100)
+  2  DIVERGED        residual exceeded diverge_threshold (ACME-E201)
+  3  ABORTED         fatal error at fail_at_step (ACME-E303)
+  4  NOT_CONVERGED   ran all steps but a step hit max_iters above tolerance (ACME-W410)
+143 SIGTERM received (scancel), a checkpoint line is printed first (ACME-W900)
+
+Deck format: one `key = value` per line, `#` comments, all keys optional.
+See share/decks/*.deck and docs/standin.md for the key list.
+"""
+import argparse
+import json
+import math
+import os
+import random
+import signal
+import socket
+import sys
+import time
+from datetime import datetime, timezone
+
+VERSION = "7.4.2"
+BUILD = "standin"
+
+DEFAULTS = {
+    "name": None,              # defaults to the deck's file stem
+    "mesh_cells": 4000,        # int, only affects the header and the fake dof count
+    "steps": 10,               # int, outer (time) steps
+    "step_seconds": 0.1,       # float, sleep per step (CLI --step-seconds / ACME_STEP_SECONDS override)
+    "max_iters": 8,            # int, inner iterations per step
+    "tolerance": 1e-6,         # float, inner convergence tolerance
+    "initial_residual": 1.0,   # float, residual at the first inner iteration of each step
+    "convergence_rate": 0.08,  # float, residual multiplier per inner iteration (<1 converges)
+    "fail_at_step": 0,         # int, 0 = never; N = abort with ACME-E303 when starting step N
+    "fail_message": "negative Jacobian in element {element} (step {step})",
+    "diverge": False,          # bool, grow residuals instead of shrinking them
+    "diverge_at_step": 1,      # int, first step at which divergence starts (if diverge)
+    "growth_rate": 12.0,       # float, residual multiplier per iteration while diverging
+    "diverge_threshold": 1e10, # float, ACME-E201 fires when a residual exceeds this
+    "seed": 42,                # int, jitter seed (log is deterministic for a given deck)
+    "result_file": "acme-result.json",
+    "dt": 0.01,                # float, fake time step size, cosmetic
+}
+
+BOOL_KEYS = {"diverge"}
+INT_KEYS = {"mesh_cells", "steps", "max_iters", "fail_at_step", "diverge_at_step", "seed"}
+FLOAT_KEYS = {"step_seconds", "tolerance", "initial_residual", "convergence_rate",
+              "growth_rate", "diverge_threshold", "dt"}
+
+EXIT_CONVERGED, EXIT_USAGE, EXIT_DIVERGED, EXIT_ABORTED, EXIT_NOT_CONVERGED = 0, 1, 2, 3, 4
+
+
+class DeckError(Exception):
+    pass
+
+
+def parse_deck(path):
+    cfg = dict(DEFAULTS)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+    except OSError as e:
+        raise DeckError(f"cannot read deck {path}: {e.strerror}") from e
+    for lineno, raw in enumerate(lines, 1):
+        line = raw.split("#", 1)[0].strip()
+        if not line or (line.startswith("[") and line.endswith("]")):
+            continue
+        if "=" not in line:
+            raise DeckError(f"{path}:{lineno}: expected key = value, got {raw!r}")
+        key, val = (s.strip() for s in line.split("=", 1))
+        key = key.lower().replace("-", "_")
+        if key not in DEFAULTS:
+            raise DeckError(f"{path}:{lineno}: unknown key {key!r}")
+        val = val.strip('"').strip("'")
+        try:
+            if key in BOOL_KEYS:
+                cfg[key] = val.lower() in ("1", "true", "yes", "on")
+            elif key in INT_KEYS:
+                cfg[key] = int(val)
+            elif key in FLOAT_KEYS:
+                cfg[key] = float(val)
+            else:
+                cfg[key] = val
+        except ValueError as e:
+            raise DeckError(f"{path}:{lineno}: bad value for {key}: {val!r}") from e
+    if cfg["name"] is None:
+        cfg["name"] = os.path.splitext(os.path.basename(path))[0]
+    if cfg["steps"] < 1:
+        raise DeckError("steps must be >= 1")
+    if cfg["max_iters"] < 1:
+        raise DeckError("max_iters must be >= 1")
+    return cfg
+
+
+class Log:
+    def __init__(self, extra_file=None):
+        self.files = [sys.stdout]
+        if extra_file:
+            self.files.append(open(extra_file, "w", encoding="utf-8"))
+
+    def __call__(self, msg=""):
+        for f in self.files:
+            f.write(msg + "\n")
+            f.flush()
+
+    def close(self):
+        for f in self.files[1:]:
+            f.close()
+
+
+def fmt_e(x):
+    return f"{x:.3e}"
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog="solve", description="ACME Solver stand-in")
+    ap.add_argument("deck", nargs="?", help="input deck (key = value)")
+    ap.add_argument("--deck", dest="deck_opt", help="input deck (alternative to the positional)")
+    ap.add_argument("--outdir", default=None, help="where to write the result file (default: cwd)")
+    ap.add_argument("--log", default=None, help="also write the log to this file")
+    ap.add_argument("--step-seconds", type=float, default=None,
+                    help="override the deck's step_seconds (env ACME_STEP_SECONDS also works)")
+    ap.add_argument("--version", action="version", version=f"ACME Solver {VERSION} ({BUILD})")
+    args = ap.parse_args(argv)
+
+    deck_path = args.deck_opt or args.deck
+    if not deck_path:
+        print("ACME-E100 usage: solve [--outdir DIR] [--log FILE] DECK", file=sys.stderr)
+        return EXIT_USAGE
+    try:
+        cfg = parse_deck(deck_path)
+    except DeckError as e:
+        print(f"ACME-E100 deck error: {e}", file=sys.stderr)
+        return EXIT_USAGE
+
+    step_seconds = cfg["step_seconds"]
+    if os.environ.get("ACME_STEP_SECONDS"):
+        step_seconds = float(os.environ["ACME_STEP_SECONDS"])
+    if args.step_seconds is not None:
+        step_seconds = args.step_seconds
+
+    outdir = args.outdir or os.getcwd()
+    os.makedirs(outdir, exist_ok=True)
+    result_path = os.path.join(outdir, cfg["result_file"])
+    log = Log(args.log)
+
+    started = datetime.now(timezone.utc)
+    t0 = time.monotonic()
+    rng = random.Random(cfg["seed"])
+    host = socket.gethostname()
+    job_id = os.environ.get("SLURM_JOB_ID")
+    state = {"status": "RUNNING", "steps_completed": 0, "total_iterations": 0,
+             "final_residual": None, "exit_code": None, "error": None}
+
+    def write_result(exit_code):
+        state["exit_code"] = exit_code
+        payload = {
+            "solver": f"ACME Solver {VERSION} ({BUILD})",
+            "name": cfg["name"],
+            "deck": os.path.abspath(deck_path),
+            "host": host,
+            "slurm_job_id": job_id,
+            "started": started.isoformat(),
+            "finished": datetime.now(timezone.utc).isoformat(),
+            "wall_seconds": round(time.monotonic() - t0, 3),
+            "steps_requested": cfg["steps"],
+            "mesh_cells": cfg["mesh_cells"],
+            **state,
+        }
+        tmp = result_path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, indent=2)
+            fh.write("\n")
+        os.replace(tmp, result_path)
+
+    def on_term(signum, _frame):
+        log(f"ACME-W900 received signal {signum}, writing checkpoint and stopping "
+            f"(step {state['steps_completed'] + 1})")
+        state["status"] = "INTERRUPTED"
+        write_result(128 + signum)
+        log("Run status: INTERRUPTED")
+        log.close()
+        os._exit(128 + signum)
+
+    signal.signal(signal.SIGTERM, on_term)
+    signal.signal(signal.SIGINT, on_term)
+
+    # ---- header -------------------------------------------------------------
+    log("=" * 78)
+    log(f"  ACME Solver {VERSION}    build: {BUILD}    (stand-in; not the real code)")
+    log(f"  host: {host}    pid: {os.getpid()}    started: {started.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+    if job_id:
+        log(f"  slurm job: {job_id}    nodelist: {os.environ.get('SLURM_JOB_NODELIST', '?')}")
+    log("=" * 78)
+    log(f"Reading input deck: {os.path.abspath(deck_path)}")
+    log(f"  name              = {cfg['name']}")
+    log(f"  mesh cells        = {cfg['mesh_cells']}")
+    log(f"  time steps        = {cfg['steps']}   (dt = {fmt_e(cfg['dt'])})")
+    log(f"  max iterations    = {cfg['max_iters']}")
+    log(f"  tolerance         = {fmt_e(cfg['tolerance'])}")
+    dof = cfg["mesh_cells"] * 3
+    t_asm = time.monotonic()
+    time.sleep(min(step_seconds, 0.05))
+    log(f"Assembling system: {cfg['mesh_cells']} cells, {dof} dof, "
+        f"{dof * 27} nonzeros ... done ({time.monotonic() - t_asm:.3f} s)")
+    log(f"Preconditioner: ILU(0)    linear solver: GMRES(30)    threads: {os.cpu_count() or 1}")
+    log()
+
+    # ---- stepping -------------------------------------------------------------
+    exit_code = EXIT_CONVERGED
+    not_converged_steps = 0
+    last_resid = None
+    for step in range(1, cfg["steps"] + 1):
+        t_step = time.monotonic()
+        log(f"--- step {step:6d}  t = {fmt_e(step * cfg['dt'])} ---")
+
+        if cfg["fail_at_step"] and step == cfg["fail_at_step"]:
+            element = rng.randint(1, cfg["mesh_cells"])
+            msg = cfg["fail_message"].format(element=element, step=step)
+            log(f"ACME-E303 fatal: {msg}")
+            log("  traceback (most recent call last):")
+            log("    acme::fem::assemble_tangent  (tangent.cc:412)")
+            log("    acme::fem::newton_step       (newton.cc:88)")
+            log("    acme::driver::advance        (driver.cc:231)")
+            log("*** ABORT ***")
+            state["status"] = "ABORTED"
+            state["error"] = f"ACME-E303 {msg}"
+            exit_code = EXIT_ABORTED
+            break
+
+        diverging = cfg["diverge"] and step >= cfg["diverge_at_step"]
+        resid = cfg["initial_residual"] * (1.0 + 0.2 * rng.random())
+        converged = False
+        for it in range(1, cfg["max_iters"] + 1):
+            state["total_iterations"] += 1
+            last_resid = resid
+            log(f"  iter {it:4d}  resid = {fmt_e(resid)}   lin.iters = {rng.randint(3, 27):3d}")
+            time.sleep(step_seconds / cfg["max_iters"])
+            if diverging:
+                if resid > cfg["diverge_threshold"] or not math.isfinite(resid):
+                    log(f"ACME-E201 solution diverged at step {step} iter {it}: "
+                        f"residual {fmt_e(resid)} exceeds {fmt_e(cfg['diverge_threshold'])}")
+                    log("  hint: reduce dt or relax the load increment")
+                    state["status"] = "DIVERGED"
+                    state["error"] = f"ACME-E201 diverged at step {step}"
+                    exit_code = EXIT_DIVERGED
+                    break
+                resid *= cfg["growth_rate"] * (0.8 + 0.4 * rng.random())
+            else:
+                if resid < cfg["tolerance"]:
+                    converged = True
+                    break
+                resid *= cfg["convergence_rate"] * (0.8 + 0.4 * rng.random())
+        if exit_code == EXIT_DIVERGED:
+            break
+        elapsed = time.monotonic() - t_step
+        if converged:
+            log(f"  step {step:6d} converged in {it} iterations  ({elapsed:.3f} s)")
+        else:
+            not_converged_steps += 1
+            log(f"ACME-W410 step {step} did not converge in {cfg['max_iters']} iterations "
+                f"(resid = {fmt_e(last_resid)})  ({elapsed:.3f} s)")
+        state["steps_completed"] = step
+        state["final_residual"] = last_resid
+
+    if exit_code == EXIT_CONVERGED:
+        if not_converged_steps:
+            state["status"] = "NOT_CONVERGED"
+            state["error"] = f"ACME-W410 {not_converged_steps} step(s) hit max_iters above tolerance"
+            exit_code = EXIT_NOT_CONVERGED
+        else:
+            state["status"] = "CONVERGED"
+
+    # ---- summary ---------------------------------------------------------------
+    wall = time.monotonic() - t0
+    write_result(exit_code)
+    log()
+    log("Summary")
+    log(f"  steps completed   : {state['steps_completed']} / {cfg['steps']}")
+    log(f"  total iterations  : {state['total_iterations']}")
+    log(f"  final residual    : {fmt_e(last_resid) if last_resid is not None else 'n/a'}")
+    log(f"  wall time         : {wall:.3f} s")
+    log(f"  solve time        : {max(wall - 0.05, 0.0):.3f} s")
+    log(f"  result file       : {result_path}")
+    if state["error"]:
+        log(f"  error             : {state['error']}")
+    log(f"Run status: {state['status']}")
+    log.close()
+    return exit_code
+
+
+if __name__ == "__main__":
+    sys.exit(main())

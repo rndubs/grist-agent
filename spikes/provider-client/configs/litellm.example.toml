@@ -1,0 +1,9 @@
+# Human-run LiteLLM proxy. The key is read from the named env var at request time.
+base_url = "https://litellm.example.org/v1"
+model = "anthropic/claude-sonnet-4-5"
+preset = "litellm"
+api_key_env = "GRIST_LITELLM_API_KEY"
+
+[quirks]
+# LiteLLM normalizes upstream reasoning into `reasoning_content`; pass `thinking`
+# / `reasoning_effort` through litellm_params in the proxy config, not here.

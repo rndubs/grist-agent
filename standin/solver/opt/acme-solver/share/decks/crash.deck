@@ -1,0 +1,8 @@
+# ACME stand-in deck: fatal error when step 4 starts (ACME-E303, "*** ABORT ***").
+# Exit 3, "Run status: ABORTED".
+name          = thermal-transient
+mesh_cells    = 8000
+steps         = 10
+step_seconds  = 0.2
+fail_at_step  = 4
+fail_message  = negative Jacobian in element {element} (step {step})

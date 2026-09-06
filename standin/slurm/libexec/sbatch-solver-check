@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Smoke check (c): submit the mock solver through the fake sbatch and prove the
+# epilog fires. Runs inside the compose `slurm` service (sbatch and solve on
+# PATH) or on a host where standin/smoke.sh has arranged PATH the same way.
+set -euo pipefail
+
+here=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
+export PATH="$here/../bin:$PATH"
+export FAKE_SLURM_EPILOG="$here/default-epilog"
+export FAKE_SLURM_STATE_DIR="${FAKE_SLURM_STATE_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/fake-slurm-check.XXXXXX")}"
+mkdir -p "$FAKE_SLURM_STATE_DIR"
+solve_bin=$(command -v solve) || { echo "sbatch-solver-check: 'solve' not on PATH" >&2; exit 2; }
+decks=$(readlink -f "$(dirname "$solve_bin")/../share/decks")
+epilog_log="$FAKE_SLURM_STATE_DIR/epilog.log"
+
+work=$(mktemp -d "$PWD/acme-smoke.XXXXXX")
+cd "$work"
+echo "sbatch-solver-check: workdir $work, state $FAKE_SLURM_STATE_DIR"
+
+id_ok=$(sbatch --parsable -J acme-converge -o %x-%j.out \
+  --wrap "solve $decks/converge.deck --outdir run-converge --step-seconds 0.1")
+id_bad=$(sbatch --parsable -J acme-crash -o %x-%j.out \
+  --wrap "solve $decks/crash.deck --outdir run-crash --step-seconds 0.1")
+echo "submitted: converge=$id_ok crash=$id_bad"
+squeue
+
+for _ in $(seq 1 600); do
+  [[ -z "$(squeue -h -t PENDING,RUNNING -j "$id_ok,$id_bad")" ]] && break
+  sleep 0.2
+done
+
+fail=0
+assert() { if eval "$2"; then echo "  ok   $1"; else echo "  FAIL $1 -- [$2]"; fail=1; fi; }
+assert "converge job COMPLETED 0:0"      '[[ "$(sacct -n -P -j "$id_ok" -o State,ExitCode)" == "COMPLETED|0:0" ]]'
+assert "crash job FAILED 3:0"            '[[ "$(sacct -n -P -j "$id_bad" -o State,ExitCode)" == "FAILED|3:0" ]]'
+assert "solver log: CONVERGED"           'grep -q "^Run status: CONVERGED$" "acme-converge-$id_ok.out"'
+assert "solver log: saw its SLURM_JOB_ID" 'grep -q "slurm job: $id_ok " "acme-converge-$id_ok.out"'
+assert "solver log: ACME-E303 + ABORTED" 'grep -q "^ACME-E303 fatal" "acme-crash-$id_bad.out" && grep -q "^Run status: ABORTED$" "acme-crash-$id_bad.out"'
+assert "result file carries the job id"  'python3 -c "import json,sys; sys.exit(0 if json.load(open(\"run-converge/acme-result.json\"))[\"slurm_job_id\"]==sys.argv[1] else 1)" "$id_ok"'
+assert "epilog fired for converge job"   'grep -q " job=$id_ok name=acme-converge state=COMPLETED exit=0 " "$epilog_log"'
+assert "epilog fired for crash job"      'grep -q " job=$id_bad name=acme-crash state=FAILED exit=3 " "$epilog_log"'
+echo "--- sacct"; sacct -j "$id_ok,$id_bad" -o JobID,JobName,State,ExitCode,Elapsed
+echo "--- epilog.log"; grep -E "job=($id_ok|$id_bad) " "$epilog_log" || true
+exit $fail

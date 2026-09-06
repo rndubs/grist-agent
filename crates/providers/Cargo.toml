@@ -1,0 +1,15 @@
+[package]
+name = "providers"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "Model clients. v0: one OpenAI-compatible client with per-endpoint quirk flags (covers vLLM, LiteLLM)."
+
+[dependencies]
+kernel.workspace = true
+
+[lints]
+workspace = true

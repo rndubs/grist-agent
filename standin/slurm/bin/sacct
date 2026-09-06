@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# Fake sacct (P0.5). Accounting view of every job the fake-slurm state dir knows,
+# including finished ones (unlike squeue). Supports -j, -n/--noheader,
+# -P/--parsable2, -p/--parsable, -X/--allocations, -u, -s/--state, -a,
+# -o/--format=Field,Field with: JobID JobName Partition Account AllocCPUS State
+# ExitCode Start End Elapsed Submit User NodeList WorkDir DerivedExitCode Timelimit.
+set -euo pipefail
+here=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
+# shellcheck source=../lib/fake-slurm.sh
+source "$here/../lib/fake-slurm.sh"
+
+jobs_filter=""; user_filter=""; state_filter=""; noheader=0; parsable=0
+format="JobID,JobName,Partition,Account,AllocCPUS,State,ExitCode"
+while (($# > 0)); do
+  case "$1" in
+    -j|--jobs|--job) jobs_filter="$2"; shift 2 ;;
+    -j*) jobs_filter="${1#-j}"; shift ;;
+    --jobs=*|--job=*) jobs_filter="${1#*=}"; shift ;;
+    -u|--user|--uid) user_filter="$2"; shift 2 ;;
+    --user=*) user_filter="${1#*=}"; shift ;;
+    -s|--state) state_filter="$2"; shift 2 ;;
+    --state=*) state_filter="${1#*=}"; shift ;;
+    -n|--noheader) noheader=1; shift ;;
+    -P|--parsable2) parsable=2; shift ;;
+    -p|--parsable) parsable=1; shift ;;
+    -o|--format|--fields) format="$2"; shift 2 ;;
+    -o*) format="${1#-o}"; shift ;;
+    --format=*|--fields=*) format="${1#*=}"; shift ;;
+    -X|--allocations|-a|--allusers|-l|--long|-b|--brief|-D|--duplicates|-T|--truncate) shift ;;
+    -S|--starttime|-E|--endtime|-A|--accounts|-r|--partition|-N|--nodelist|-M|--clusters|--name) shift 2 ;;
+    --starttime=*|--endtime=*|--accounts=*|--partition=*|--name=*) shift ;;
+    -V|--version) echo "slurm $FAKE_SLURM_VERSION"; exit 0 ;;
+    --help|--usage) echo "Usage: sacct [-j ids] [-n] [-P] [-o Field,Field]"; exit 0 ;;
+    *) fs_die "sacct: unrecognized option '$1'" ;;
+  esac
+done
+format=${format//%/}   # allow JobID%20 -> JobID (width hints ignored)
+IFS=, read -r -a fields <<<"$format"
+
+field() {  # field NAME JOBDIR
+  local d="$2" st rc
+  st=$(fs_read "$d/state")
+  rc=$(fs_read "$d/exit_code")
+  case "${1,,}" in
+    jobid) fs_meta_get "$d" id ;;
+    jobname) fs_meta_get "$d" name ;;
+    partition) fs_meta_get "$d" partition ;;
+    account) fs_meta_get "$d" account ;;
+    alloccpus|ncpus|reqcpus) printf '%s' $(( $(fs_meta_get "$d" ntasks 1) * $(fs_meta_get "$d" cpus_per_task 1) )) ;;
+    state) case "$st" in CANCELLED) printf 'CANCELLED by %s' "$(fs_meta_get "$d" uid)" ;; *) printf '%s' "$st" ;; esac ;;
+    exitcode|derivedexitcode)
+      if [[ -z "$rc" ]]; then printf '0:0'
+      elif (( rc > 128 )); then printf '0:%s' $((rc - 128))
+      else printf '%s:0' "$rc"; fi ;;
+    start) local s; s=$(fs_read "$d/start_time"); if [[ -n "$s" ]]; then fs_fmt_timestamp "$s"; else printf 'Unknown'; fi ;;
+    end) local e; e=$(fs_read "$d/end_time"); if [[ -n "$e" ]]; then fs_fmt_timestamp "$e"; else printf 'Unknown'; fi ;;
+    submit) fs_fmt_timestamp "$(fs_meta_get "$d" submit_time)" ;;
+    elapsed) local el; el=$(fs_job_elapsed "$d"); printf '%02d:%02d:%02d' $((el/3600)) $((el%3600/60)) $((el%60)) ;;
+    timelimit) local tl; tl=$(fs_meta_get "$d" time_limit 0); if (( tl == 0 )); then printf 'UNLIMITED'; else printf '%02d:%02d:%02d' $((tl/3600)) $((tl%3600/60)) $((tl%60)); fi ;;
+    user) fs_meta_get "$d" user ;;
+    uid) fs_meta_get "$d" uid ;;
+    nodelist) case "$st" in PENDING) printf 'None assigned' ;; *) printf '%s' "$FAKE_SLURM_NODE" ;; esac ;;
+    nnodes|allocnodes) fs_meta_get "$d" nodes 1 ;;
+    workdir) fs_meta_get "$d" workdir ;;
+    cluster) printf 'fake' ;;
+    *) printf '' ;;
+  esac
+}
+
+header_name() {
+  case "${1,,}" in
+    jobid) echo JobID ;; jobname) echo JobName ;; partition) echo Partition ;; account) echo Account ;;
+    alloccpus) echo AllocCPUS ;; ncpus) echo NCPUS ;; reqcpus) echo ReqCPUS ;; state) echo State ;;
+    exitcode) echo ExitCode ;; derivedexitcode) echo DerivedExitCode ;; start) echo Start ;; end) echo End ;;
+    submit) echo Submit ;; elapsed) echo Elapsed ;; timelimit) echo Timelimit ;; user) echo User ;; uid) echo UID ;;
+    nodelist) echo NodeList ;; nnodes) echo NNodes ;; allocnodes) echo AllocNodes ;; workdir) echo WorkDir ;;
+    cluster) echo Cluster ;; *) echo "$1" ;;
+  esac
+}
+
+emit_row() {  # emit_row VALUE...
+  if (( parsable == 2 )); then local IFS='|'; printf '%s\n' "$*"
+  elif (( parsable == 1 )); then local IFS='|'; printf '%s|\n' "$*"
+  else local out=""; for v in "$@"; do out+=$(printf '%-12s ' "${v:0:12}"); done; printf '%s\n' "${out% }"; fi
+}
+
+if (( ! noheader )); then
+  hdr=(); for f in "${fields[@]}"; do hdr+=("$(header_name "$f")"); done
+  emit_row "${hdr[@]}"
+  if (( parsable == 0 )); then dashes=(); for _ in "${fields[@]}"; do dashes+=("------------"); done; emit_row "${dashes[@]}"; fi
+fi
+
+for id in $(fs_all_job_ids); do
+  d=$(fs_jobdir "$id")
+  [[ -f "$d/meta" ]] || continue
+  fs_refresh_job "$d"
+  if [[ -n "$jobs_filter" ]]; then fs_in_list "$id" "$jobs_filter" || continue; fi
+  if [[ -n "$user_filter" ]]; then fs_in_list "$(fs_meta_get "$d" user)" "$user_filter" || continue; fi
+  if [[ -n "$state_filter" ]]; then st=$(fs_read "$d/state"); fs_in_list "$st" "${state_filter^^}" || fs_in_list "$(fs_state_code "$st")" "${state_filter^^}" || continue; fi
+  row=(); for f in "${fields[@]}"; do row+=("$(field "$f" "$d")"); done
+  emit_row "${row[@]}"
+done

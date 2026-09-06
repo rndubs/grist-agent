@@ -1,0 +1,37 @@
+# LiteLLM proxy config for the CI stand-in stack (P0.5, D18).
+#
+# Routes `stand-in/<model>` to the llama.cpp server on the compose network via
+# LiteLLM's generic OpenAI-compatible provider. The master key is read from the
+# LITELLM_MASTER_KEY environment variable (set by standin/up.sh or CI); it is
+# never written here.
+#
+# The model_name must match the `--alias` given to llama-server in compose.yaml.
+
+model_list:
+  - model_name: stand-in/qwen2.5-1.5b-instruct
+    litellm_params:
+      model: openai/qwen2.5-1.5b-instruct
+      api_base: http://llama:8080/v1
+      # llama.cpp ignores the key, but LiteLLM's openai provider refuses an empty one.
+      api_key: sk-no-key-required
+      timeout: 600
+      stream_timeout: 600
+      max_retries: 1
+    model_info:
+      mode: chat
+      supports_function_calling: true
+      max_input_tokens: 4096
+      max_output_tokens: 1024
+      input_cost_per_token: 0
+      output_cost_per_token: 0
+
+litellm_settings:
+  # Silently drop request params the upstream does not know instead of erroring.
+  drop_params: true
+  telemetry: false
+  request_timeout: 600
+  set_verbose: false
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  # No database: virtual keys and spend tracking are off; the master key is the only key.

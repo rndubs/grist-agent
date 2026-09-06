@@ -1,0 +1,153 @@
+name: CI
+
+on:
+  pull_request:
+    # `labeled` so that adding the `ci:standin` label starts the opt-in stack job.
+    types: [opened, synchronize, reopened, labeled]
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      standin:
+        description: "Run the opt-in stand-in stack job (downloads and serves a model)"
+        type: boolean
+        default: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  fmt:
+    name: cargo fmt --check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.94.1
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  clippy:
+    name: cargo clippy -D warnings
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.94.1
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+  test:
+    name: cargo test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.94.1
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace --all-features
+
+  msrv:
+    name: MSRV build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.94"
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --workspace --all-features
+
+  # ---------------------------------------------------------------------------
+  # P0.5 stand-in stack (D18): llama.cpp + LiteLLM + fake Slurm + mock solver.
+  # Independent of the Rust jobs. This is where the P1.5 provider integration
+  # tests and the P3.4 waker test run; see docs/standin.md.
+  # ---------------------------------------------------------------------------
+  standin-scripts:
+    name: fake Slurm + mock solver self-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: standin/slurm/test.sh
+      - run: standin/solver/test.sh
+
+  # OPT-IN. Pulls two container images and a ~1 GB GGUF and serves a model on CPU.
+  # It does not run on ordinary pushes or PRs. Start it by adding the `ci:standin`
+  # label to the PR, or from the Actions tab (workflow_dispatch). See docs/standin.md.
+  standin:
+    name: stand-in stack (opt-in; llama.cpp + LiteLLM + fake Slurm)
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.standin) ||
+      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'ci:standin'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore GGUF cache
+        uses: actions/cache@v4
+        with:
+          path: standin/.cache/models
+          # The model pin lives in compose.yaml; an older cache is still restored
+          # (restore-keys) so only a changed pin triggers a fresh download.
+          key: standin-gguf-${{ hashFiles('standin/compose.yaml') }}
+          restore-keys: |
+            standin-gguf-
+
+      - name: Start the stack
+        run: |
+          echo "LITELLM_MASTER_KEY=sk-standin-ci-$(openssl rand -hex 12)" > standin/.env
+          standin/up.sh
+
+      - name: Export stand-in endpoints
+        # STANDIN_OPENAI_BASE_URL, STANDIN_LITELLM_BASE_URL, STANDIN_LITELLM_KEY, STANDIN_MODEL
+        run: standin/up.sh --print-env | sed -e 's/^export //' -e 's/"//g' >> "$GITHUB_ENV"
+
+      - name: Smoke test (tool call via LiteLLM, SSE via llama.cpp, sbatch -> solver -> epilog)
+        run: standin/smoke.sh
+
+      - name: Tier report
+        run: standin/env-gate.sh --require standin --github-output
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.94.1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: spikes/provider-client
+
+      - name: P0.2 provider spike against the stand-in (quirk row for llama.cpp + LiteLLM)
+        run: spikes/provider-client/run-against.sh standin
+
+      # ===== P1.5 / P3.4 HOOK ===================================================
+      # Integration tests against the stand-in go here. They read:
+      #   STANDIN_OPENAI_BASE_URL   llama.cpp  (OpenAI-compatible, no auth)
+      #   STANDIN_LITELLM_BASE_URL  LiteLLM proxy
+      #   STANDIN_LITELLM_KEY       master key
+      #   STANDIN_MODEL             alias; use stand-in/$STANDIN_MODEL through LiteLLM
+      # Replace the echo with the real command when crates/providers lands, e.g.
+      #   cargo test -p providers --features standin-integration -- --nocapture
+      # ==========================================================================
+      - name: Provider integration tests (P1.5 hook)
+        run: |
+          echo "P1.5 hook: no integration tests registered yet."
+          echo "  STANDIN_OPENAI_BASE_URL=$STANDIN_OPENAI_BASE_URL"
+          echo "  STANDIN_LITELLM_BASE_URL=$STANDIN_LITELLM_BASE_URL"
+          echo "  STANDIN_MODEL=$STANDIN_MODEL"
+
+      - name: Stack logs
+        if: failure()
+        run: docker compose -f standin/compose.yaml logs --tail=200
+
+      - name: Fix model cache ownership for the cache post-step
+        if: always()
+        run: sudo chown -R "$(id -u):$(id -g)" standin/.cache/models || true
+
+      - name: Tear down
+        if: always()
+        run: standin/up.sh --down

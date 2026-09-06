@@ -1,0 +1,9 @@
+# ACME stand-in deck: converges cleanly.  Exit 0, "Run status: CONVERGED".
+name             = cantilever-static
+mesh_cells       = 4000
+steps            = 10
+step_seconds     = 0.2      # per step; CLI --step-seconds or ACME_STEP_SECONDS override
+max_iters        = 8
+tolerance        = 1e-6
+initial_residual = 1.0
+convergence_rate = 0.08

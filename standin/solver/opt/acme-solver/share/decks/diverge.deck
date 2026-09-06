@@ -1,0 +1,11 @@
+# ACME stand-in deck: residuals grow from step 3 until ACME-E201 fires.
+# Exit 2, "Run status: DIVERGED".
+name              = impact-implicit
+mesh_cells        = 12000
+steps             = 10
+step_seconds      = 0.2
+max_iters         = 12
+diverge           = true
+diverge_at_step   = 3
+growth_rate       = 12.0
+diverge_threshold = 1e10

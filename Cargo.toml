@@ -1,0 +1,40 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+# Phase 0 spike code is throwaway and must never be built with the workspace.
+exclude = ["spikes"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+# Minimum supported Rust version. Must match rust-toolchain.toml when bumped.
+rust-version = "1.94"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/rndubs/grist-agent"
+publish = false
+
+[workspace.dependencies]
+# In-repo crates. `kernel` depends on nothing in this list (see crates/README.md).
+kernel = { path = "crates/kernel" }
+providers = { path = "crates/providers" }
+host = { path = "crates/host" }
+ext = { path = "crates/ext" }
+profiles = { path = "crates/profiles" }
+sandbox = { path = "crates/sandbox" }
+orchestrator = { path = "crates/orchestrator" }
+provenance = { path = "crates/provenance" }
+evolve = { path = "crates/evolve" }
+
+# Third-party dependencies shared across crates. Versions are pinned here once.
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "process", "fs"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+async-trait = "0.1"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+all = "warn"

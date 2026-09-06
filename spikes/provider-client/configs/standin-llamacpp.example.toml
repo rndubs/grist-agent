@@ -1,0 +1,5 @@
+# P0.5 llama.cpp stand-in (llama-server --jinja). In CI the runner uses
+# STANDIN_OPENAI_BASE_URL / STANDIN_MODEL instead of this file.
+base_url = "http://127.0.0.1:8080/v1"
+model = "stand-in"
+preset = "llamacpp"

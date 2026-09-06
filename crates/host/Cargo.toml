@@ -1,0 +1,15 @@
+[package]
+name = "host"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "Host trait implementations for filesystem, process spawn, network, secrets-as-handles, and ask_user: native and remote-client."
+
+[dependencies]
+kernel.workspace = true
+
+[lints]
+workspace = true
