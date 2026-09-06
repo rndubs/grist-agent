@@ -141,7 +141,8 @@ jobs:
       # The P3.4 waker test plugs in here too when it exists.
       # ==========================================================================
       - name: Provider integration tests (P1.5)
-        run: cargo test -p providers --features standin-integration -- --nocapture
+        # GRIST_REQUIRE_STANDIN=1 turns an unset STANDIN_* into a failure instead of a skip.
+        run: GRIST_REQUIRE_STANDIN=1 cargo test -p providers --features standin-integration --test standin -- --nocapture
 
       - name: Stack logs
         if: failure()

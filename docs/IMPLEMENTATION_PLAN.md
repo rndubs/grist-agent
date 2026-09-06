@@ -33,7 +33,7 @@ This file is the single source of truth for progress. Update it in the same PR a
 | Phase | Name | Status | Milestones done | Exit criteria met |
 |---|---|---|---|---|
 | P0 | Spikes (de-risk before design freeze) | in progress | 2 / 6 | no |
-| P1 | Kernel + local daemon | in progress | 2 / 10 (P1.0, P1.1) | no |
+| P1 | Kernel + local daemon | in progress | 3 / 10 (P1.0, P1.1, P1.5) | no |
 | P2 | Extensions and specialization | not started | 0 / 9 | no |
 | P3 | Provenance and orchestration | not started | 0 / 7 | no |
 | P4 | Evolve loop | not started | 0 / 7 | no |
@@ -179,17 +179,17 @@ Per D20. Agents implement against signatures, not prose. Each spec is reviewed b
 - [ ] `diff-logs` command: strips envelope fields and asserts byte-identical payloads (D16)
 - [ ] Test: a recorded session replays in under a second with zero network access and `diff-logs` passes
 
-### P1.5 — `providers` crate — `not started`
+### P1.5 — `providers` crate — `done` (stand-in integration tests wired into the opt-in `standin` CI job; first live run needs the `ci:standin` label on the PR)
 
 Depends on P0.2 / ADR-0003.
 
-- [ ] One OpenAI-compatible client with SSE streaming
-- [ ] Per-endpoint quirk flags from the P0.2 table (tool format, reasoning field name, structured-output support, auth mode)
-- [ ] Reasoning/thinking mapped into a `Thinking` content block that survives serialization
-- [ ] Image content blocks encoded from artifact bytes at request time (D15)
-- [ ] Secrets resolved from Host handles at request time only (D10)
-- [ ] Token usage from every response recorded into the model call event (D13)
-- [ ] Integration tests against the P0.5 stand-in in CI; vLLM and LiteLLM tests behind the environment gate
+- [x] One OpenAI-compatible client with SSE streaming
+- [x] Per-endpoint quirk flags from the P0.2 table (tool format, reasoning field name, structured-output support, auth mode)
+- [x] Reasoning/thinking mapped into a `Thinking` content block that survives serialization
+- [x] Image content blocks encoded from artifact bytes at request time (D15)
+- [x] Secrets resolved from Host handles at request time only (D10)
+- [x] Token usage from every response recorded into the model call event (D13)
+- [x] Integration tests against the P0.5 stand-in in CI (`crates/providers/tests/standin.rs`, feature `standin-integration`, run by the opt-in `standin` job with `GRIST_REQUIRE_STANDIN=1`); vLLM and LiteLLM tests behind the environment gate (skip when unset)
 
 ### P1.6 — `host` crate — `not started`
 
@@ -591,3 +591,4 @@ From §15 of the dev plan.
 | 2026-09-06 | P0.3 done (process JSON-RPC recommended, ADR-0001 drafted). P0.2 client + write-up + ADR-0003 draft; real endpoints remain 🧑. P0.5 fake Slurm and mock solver tested; containers and CI job authored, pending first green run. P0.1 spike scripts ready for the login node. P1.0 specs drafted at v0.1 and reconciled, awaiting review. |
 | 2026-09-06 | Model-serving stand-in stack made opt-in in CI (label `ci:standin` / manual); fake Slurm and mock solver self-tests stay on every PR. D18 amended accordingly. |
 | 2026-09-06 | P1.0 specs approved at v0.1; ADR-0001 and ADR-0003 accepted. P1.1 core types landed in `crates/kernel` (in-crate RFC 8785 canonicalizer with `ryu-js`; `serde_json` `float_roundtrip`; `proptest` dev-dependency). Spec clarifications marked **[clarified in P1.1]**: `Net` port rule and host normalization in `narrower_than`; the sandbox envelope excludes `secret:` atoms from `caps`. |
+| 2026-09-06 | P1.5 `providers` landed: one OpenAI-compatible SSE client with `Quirks` from the model profile; 41 unit tests over fake vLLM/LiteLLM/llama.cpp/Hermes shapes; stand-in integration tests behind `standin-integration`, wired into the opt-in CI job. Clarifications recorded in `docs/specs/kernel-interface.md` §3.8 as **[clarified in P1.5]**. |

@@ -822,6 +822,8 @@ pub trait Provider: Send + Sync {
 
 Provider clients are constructed by the launcher with an `Arc<dyn SecretResolver>` (§3.9); the kernel never resolves a secret (D10).
 
+**[clarified in P1.5]** Decisions the `providers` crate made where this spec and ADR-0003 were silent: `stream_options.include_usage` is always sent and `supports_stream_usage` is informational; a stream that ends without `[DONE]` is accepted iff a `finish_reason` was seen, else `InvalidResponse`; native tool calls with `finish_reason: stop` still yield `StopReason::ToolUse`; `tool_choice` is never sent unless `params.extra` sets it; a missing image artifact is a non-retryable `Client{status: 0}`; `Thinking` blocks are replayed to the endpoint under the field `reasoning_field` names (with `thinking_blocks` when a signature exists) and dropped for `none`/`inline_think`; `raw_response_hash` covers the SSE data payloads joined with `\n`, `[DONE]` excluded; a mid-stream `{"error": …}` chunk is `Server{status: 200}`.
+
 ### 3.9 `Host`, secrets, `ask_user`
 
 ```rust
