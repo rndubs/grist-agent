@@ -21,7 +21,7 @@ These rules are binding. `kernel` enforces its own rule with a test
 4. Cross-edges between the non-kernel crates are allowed only where the plan
    states them. Currently expected:
    - `ext` → `sandbox` (out-of-process tools run under the sandbox launchers, P2.1)
-   - `orchestrator` → `sandbox`, `host` (outer bwrap, remote host client, P3.3)
+   - `orchestrator` → `sandbox`, `host` (outer bwrap, remote host client, P3.3; used as dev-dependencies since P1 for the exit-criteria integration tests in `crates/orchestrator/tests/`)
    - `evolve` → `provenance`, `profiles`, `orchestrator` (archive, candidates, eval runs, P4)
    - `profiles` → `sandbox` (reserved; P1.8 needed only `kernel::derive_policy_with` and `Capability`, so the edge is not used yet)
    Add a new edge here in the same PR that introduces it.

@@ -210,7 +210,7 @@ Depends on P0.1 / ADR-0002.
 - [x] Base tools: `read`, `write`, `edit` (in-process via Host policy checks), `bash` (Stateless, bwrap)
 - [x] `run_script` tool returning a `Task`, plus the in-kernel process-exit waker that completes it (D1)
 - [x] Python REPL as a `Session` tool per ADR-0001, inside the inner sandbox
-- [x] Tests: `fs.ro` tool cannot write (`tools::write_under_a_read_only_policy_is_denied`, and `bwrap::fs_ro_mount_refuses_a_write_and_rw_allows_it` 🧑 bwrap host); tool without `net` cannot open a socket (`bwrap::network_off_cannot_open_a_socket` 🧑 bwrap host); timeout enforced (`none_backend::timeout_is_enforced_and_the_process_is_gone`, `session::per_call_timeout_kills_the_process`); tool env contains no API key (`none_backend::none_env_scrubbed`, `policy_args::env_is_scrubbed_to_the_allowlist_with_home_forced`); `run_script` future yields the exit outcome without polling (`tools::sandboxed::run_script_returns_a_task_and_the_future_yields_the_exit_outcome`); the kernel-level suspend/resume cycle is asserted with P1.2/P1.4
+- [x] Tests: `fs.ro` tool cannot write (`tools::write_under_a_read_only_policy_is_denied`, and `bwrap::fs_ro_mount_refuses_a_write_and_rw_allows_it` 🧑 bwrap host); tool without `net` cannot open a socket (`bwrap::network_off_cannot_open_a_socket` 🧑 bwrap host); timeout enforced (`none_backend::timeout_is_enforced_and_the_process_is_gone`, `session::per_call_timeout_kills_the_process`); tool env contains no API key (`none_backend::none_env_scrubbed`, `policy_args::env_is_scrubbed_to_the_allowlist_with_home_forced`); `run_script` future yields the exit outcome without polling (`tools::sandboxed::run_script_returns_a_task_and_the_future_yields_the_exit_outcome`); the kernel-level suspend/resume cycle completes without polling in context (`crates/orchestrator/tests/exit_criteria.rs::run_script_session_suspends_and_the_process_exit_waker_resumes_it`)
 
 ### P1.8 — `profiles` crate and catalog — `done`
 
@@ -237,9 +237,9 @@ Open question §15.2 (wire protocol) is decided here.
 
 ### Exit criteria — Phase 1
 
-- [ ] A coding session (read/edit/bash on a real repo) is recorded and replays with `diff-logs` passing and no network
-- [ ] A `run_script` session (start, suspend, process-exit waker, resume, finish) is recorded and replays the same way
-- [ ] Session reaches `failed` on provider exhaustion and resumes from its checkpoint
+- [ ] A coding session (read/edit/bash on a real repo) is recorded and replays with `diff-logs` passing and no network (recorded: `exit_criteria.rs::coding_session_read_edit_bash_is_recorded`; replay + `diff-logs` with P1.4)
+- [ ] A `run_script` session (start, suspend, process-exit waker, resume, finish) is recorded and replays the same way (recorded: `exit_criteria.rs::run_script_session_suspends_and_the_process_exit_waker_resumes_it`; replay with P1.4)
+- [x] Session reaches `failed` on provider exhaustion and resumes from its checkpoint (`crates/orchestrator/tests/exit_criteria.rs::provider_exhaustion_fails_the_session_and_it_resumes_from_its_checkpoint`, in-process and from the file)
 - [ ] `kernel` soft-frozen: changes now require an ADR (D12)
 - [ ] `State.schema_version` migrations exercised by at least one test
 
@@ -597,3 +597,4 @@ From §15 of the dev plan.
 | 2026-09-06 | P1.7 `sandbox` landed: `BwrapBackend` (pure `policy_to_args` against the P0.1 inner shape), `NoneBackend` behind `dev-sandbox-none` with a CI-asserted absence from default builds, `JsonRpcSession` (newline JSON-RPC 2.0, SIGTERM→SIGKILL), the six base tools incl. `run_script` (Task + in-process waker future) and the Python REPL; 57 tests, 5 need a bwrap host. Clarifications recorded in `kernel-interface.md` §3.12 as **[clarified in P1.7]**. |
 | 2026-09-06 | P1.2 loop landed in `crates/kernel/src/loop_/`: `Kernel`, `KernelHandle`, the §6 turn with every cancellation check point, the D1/D2 state machines, retry with full jitter, kernel spill, ingress redaction, chain resolution, registry enforcement, in-process waker, `open` with resume/recovery/migration; 60 loop tests. Clarifications recorded in `kernel-interface.md` §7 as **[clarified in P1.2]**. |
 | 2026-09-06 | P1.8 `profiles` landed with the in-repo `profiles/` tree (catalog, bundles, `stand-in` model, `default` agent): per-file validation with exact TOML paths, D7 merge, bundle and placeholder expansion, symbolic `resolved_profile_hash`, narrowing checks, prompt assembly, `KernelInputs` for the launcher; 63 tests. Clarifications recorded in `profile-schema.md` §13 as **[clarified in P1.8]**. |
+| 2026-09-06 | Phase 1 exit-criteria sessions added in `crates/orchestrator/tests/exit_criteria.rs` (real kernel + `NativeHost` + `None` backend + base tools + file log): coding session recorded, `run_script` suspend/waker/resume recorded, provider exhaustion → `failed` → resume proven. The `orchestrator → sandbox, host` edges are used as dev-dependencies for these tests. |

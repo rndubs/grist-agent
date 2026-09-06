@@ -11,5 +11,16 @@ description = "Placement, wakers, fleet, agent-to-agent messaging, trust tiers."
 [dependencies]
 kernel.workspace = true
 
+# Phase 1 exit-criteria sessions (crates/orchestrator/tests/exit_criteria.rs) drive a real kernel
+# with the host and sandbox crates; these are the `orchestrator → sandbox, host` edges of
+# crates/README.md, used as dev-dependencies until P1.9/P3.3 use them for real.
+[dev-dependencies]
+host.workspace = true
+sandbox = { workspace = true, features = ["dev-sandbox-none"] }
+tokio.workspace = true
+serde_json.workspace = true
+async-trait.workspace = true
+tempfile.workspace = true
+
 [lints]
 workspace = true
