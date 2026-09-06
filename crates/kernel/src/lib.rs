@@ -21,6 +21,7 @@ pub mod memory;
 pub mod middleware;
 pub mod provider;
 pub mod redact;
+pub mod replay;
 pub mod sandbox;
 pub mod serde_util;
 pub mod state;
