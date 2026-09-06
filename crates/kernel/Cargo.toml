@@ -9,6 +9,20 @@ publish.workspace = true
 description = "Agent loop, typed State, Tool trait, Middleware trait, event log, checkpoints, suspend/resume."
 
 [dependencies]
+# Third-party only: `kernel` depends on nothing in-repo (crates/README.md).
+tokio.workspace = true
+tokio-util.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+async-trait.workspace = true
+blake3.workspace = true
+futures-core.workspace = true
+regex.workspace = true
+ryu-js.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
 
 [lints]
 workspace = true

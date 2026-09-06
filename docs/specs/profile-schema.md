@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | draft, awaiting human review (P1.0 🧑) |
+| **Status** | approved at v0.1 (2026-09-06); implementation clarifications are marked **[clarified in P1.x]** |
 | **Version** | 0.1 |
 | **Date** | 2026-09-06 |
 | **Decides for** | P1.8 (`profiles` crate, catalog, validator), and the profile-facing halves of P1.7, P2.1–P2.4, P2.6–P2.9, P4.4, P5.1 |

@@ -33,7 +33,7 @@ This file is the single source of truth for progress. Update it in the same PR a
 | Phase | Name | Status | Milestones done | Exit criteria met |
 |---|---|---|---|---|
 | P0 | Spikes (de-risk before design freeze) | in progress | 2 / 6 | no |
-| P1 | Kernel + local daemon | in progress (P1.0 drafts only) | 0 / 10 | no |
+| P1 | Kernel + local daemon | in progress | 2 / 10 (P1.0, P1.1) | no |
 | P2 | Extensions and specialization | not started | 0 / 9 | no |
 | P3 | Provenance and orchestration | not started | 0 / 7 | no |
 | P4 | Evolve loop | not started | 0 / 7 | no |
@@ -94,11 +94,11 @@ Scope narrowed by D8: middleware and first-party tools are compiled Rust; this s
 - [x] Score both against: authorability by the agent at runtime without a recompile, sandbox compatibility under P0.1's inner bwrap, state persistence across calls, latency per call, packaging and distribution
 - [x] Write-up: `docs/spikes/extension-mechanism.md`
 
-### P0.4 — Decisions and design freeze — `in progress` 🧑 (ADR-0001 and ADR-0003 drafted as `proposed`; acceptance is the human's)
+### P0.4 — Decisions and design freeze — `in progress` 🧑 (ADR-0001 and ADR-0003 accepted 2026-09-06; ADR-0002 waits on the P0.1 login-node run; dev-plan bump and the P1 freeze are the human's)
 
-- [ ] **ADR-0001** Out-of-process tool mechanism (from P0.3), recording the D8 tier split — drafted (`proposed`), 🧑 accept
+- [x] **ADR-0001** Out-of-process tool mechanism (from P0.3), recording the D8 tier split — accepted 2026-09-06
 - [ ] **ADR-0002** Sandbox stack on the HPC login node and fallback (from P0.1)
-- [ ] **ADR-0003** Provider client shape: one OpenAI-compatible client with quirk flags (from P0.2) — drafted (`proposed`), 🧑 accept
+- [x] **ADR-0003** Provider client shape: one OpenAI-compatible client with quirk flags (from P0.2) — accepted 2026-09-06
 - [ ] Update the dev plan (§3, §4, §8, §11) with anything the spikes changed and with D1–D20; bump to v0.2
 - [ ] 🧑 Freeze the crate list and the `kernel` public surface for P1
 
@@ -127,28 +127,28 @@ Per D18 and D9. Everything agents need to run integration tests without GPUs, cl
 
 **Purpose:** the core (§4) plus enough around it to run a real session locally and replay it. Soft freeze of `kernel` at exit (D12).
 
-### P1.0 — Interface specs — `in progress` 🧑 (all three drafted at v0.1 and cross-reconciled; awaiting human review)
+### P1.0 — Interface specs — `done` (all three approved at v0.1 on 2026-09-06)
 
 Per D20. Agents implement against signatures, not prose. Each spec is reviewed by a human before P1.1 starts.
 
 - [x] (draft v0.1) `docs/specs/kernel-interface.md`: Rust signatures for `State`, `Tool`, `ToolKind`, `ToolResult`, `Task`, `Capability`, `Middleware`, `Provider`, `Host`, `ArtifactStore`, `Memory`, `SandboxBackend`; the task state machine (D1); the session state machine (D2); cancellation, retry, and crash-recovery semantics (D15)
 - [x] (draft v0.1) `docs/specs/event-schema.md`: envelope, every `Event` kind and its payload fields, what each hash covers, the volatile-field list excluded from the state hash (D3, D13)
 - [x] (draft v0.1) `docs/specs/profile-schema.md`: TOML schema for model profile, agent profile, project overrides, bundles file; merge rules; middleware priority slots; system prompt block order; validator rejection cases; capability atoms and the narrower-than relation (D6, D7)
-- [ ] 🧑 All three reviewed and approved
+- [x] 🧑 All three reviewed and approved (2026-09-06, v0.1 as on `main`)
 
-### P1.1 — Core types — `not started`
+### P1.1 — Core types — `done`
 
-- [ ] `State` (serde) with `schema_version` from the first commit; fields: messages, `pending_tasks`, `session_status` (D2), active profile hashes, memory pointer, notebook path, sandbox policy hash, sandbox backend name (D14)
-- [ ] `State` migration hook: loading an older `schema_version` runs a registered migration or fails loudly
-- [ ] Content blocks: text, thinking, tool use, tool result, and `Image{artifact_handle, mime}` (D15)
-- [ ] `Tool` trait: `name`, `description`, `schema`, `kind: Stateless | Session` (D5), `capabilities: Vec<Capability>`, async `invoke() -> Result<ToolResult>` (D4)
-- [ ] `ToolResult = Value | Task { id, status, eta, check_hint }`; `Task` status enum per D1
-- [ ] `Capability` atoms and `narrower_than` per D6, with property tests (reflexive, transitive, path-prefix and allowlist cases)
-- [ ] `Middleware` trait (async): `before_model`, `after_model`, `before_tool`, `after_tool`, `on_compact`, `on_resume`
-- [ ] `ArtifactStore` and `Memory` traits with no-op implementations (D12)
-- [ ] `Event` enum covering every kind in §4.2 plus `TaskUpdate`, `Cancelled`, `ProfileLoad`; tool and model events carry the D13 fields
-- [ ] Hashing module: BLAKE3 over RFC 8785 canonical JSON, prefixed hash strings, `request_hash` and `state_hash` definitions (D3)
-- [ ] Unit tests for serde round-trips and hash stability of every core type
+- [x] `State` (serde) with `schema_version` from the first commit; fields: messages, `pending_tasks`, `session_status` (D2), active profile hashes, memory pointer, notebook path, sandbox policy hash, sandbox backend name (D14)
+- [x] `State` migration hook: loading an older `schema_version` runs a registered migration or fails loudly
+- [x] Content blocks: text, thinking, tool use, tool result, and `Image{artifact_handle, mime}` (D15)
+- [x] `Tool` trait: `name`, `description`, `schema`, `kind: Stateless | Session` (D5), `capabilities: Vec<Capability>`, async `invoke() -> Result<ToolResult>` (D4)
+- [x] `ToolResult = Value | Task { id, status, eta, check_hint }`; `Task` status enum per D1
+- [x] `Capability` atoms and `narrower_than` per D6, with property tests (reflexive, transitive, path-prefix and allowlist cases)
+- [x] `Middleware` trait (async): `before_model`, `after_model`, `before_tool`, `after_tool`, `on_compact`, `on_resume`
+- [x] `ArtifactStore` and `Memory` traits with no-op implementations (D12)
+- [x] `Event` enum covering every kind in §4.2 plus `TaskUpdate`, `Cancelled`, `ProfileLoad`; tool and model events carry the D13 fields
+- [x] Hashing module: BLAKE3 over RFC 8785 canonical JSON, prefixed hash strings, `request_hash` and `state_hash` definitions (D3)
+- [x] Unit tests for serde round-trips and hash stability of every core type (`crates/kernel/tests/core_types.rs`; RFC 8785 vectors in `hash`; `Capability` property tests in `capability`)
 
 ### P1.2 — The loop — `not started`
 
@@ -519,7 +519,7 @@ Checked at every phase boundary.
 
 ### Schema versioning
 
-- [ ] `State.schema_version` (P1.1), event schema version, profile schema version, PROV schema version each bumped with a migration and a test
+- [ ] `State.schema_version` (P1.1: `MigrationRegistry` + a v0→v1 migration test in `core_types.rs`), event schema version, profile schema version, PROV schema version each bumped with a migration and a test
 
 ### Documentation
 
@@ -541,7 +541,7 @@ Maps §14 risks, plus two surfaced in review, to the milestones that mitigate th
 | In-house tools unavailable to agents and CI | D9, P0.5 mocks, spill handler behind an interface (P2.5) | open |
 | Kernel feature creep | P0.0 (CONTRIBUTING), P1.0 specs, D12 freeze schedule, boundary track | open |
 | Profiles overriding structure | P1.8 validator (D7) | open |
-| Checkpoint schema drift | P1.1 `schema_version` + migration hook, schema versioning track | open |
+| Checkpoint schema drift | P1.1 `schema_version` + migration hook, schema versioning track | mitigated (P1.1 hook + test); retire at P1 exit |
 | Secrets in the archive | D10: P1.3 redactor, P1.6 handles, P1.7 scrubbed env | open |
 | Evolve loop overfits / optimizes noise | P4.2 hidden sets (D19) + baseline, P4.3 gates, P4 exit constructed rejection (D16) | open |
 | Fine-tune / harness drift | P5.1 trained-against hash + warning | open |
@@ -556,9 +556,9 @@ Maps §14 risks, plus two surfaced in review, to the milestones that mitigate th
 
 | ADR | Decision | Decided in | Status |
 |---|---|---|---|
-| ADR-0001 | Out-of-process tool mechanism (process JSON-RPC vs. WASM), recording the D8 tier split | P0.4 | proposed (drafted 2026-09-06) |
+| ADR-0001 | Out-of-process tool mechanism (process JSON-RPC vs. WASM), recording the D8 tier split | P0.4 | accepted (2026-09-06) |
 | ADR-0002 | Sandbox stack on the HPC login node and fallback | P0.4 | pending |
-| ADR-0003 | One OpenAI-compatible provider client with quirk flags | P0.4 | proposed (drafted 2026-09-06) |
+| ADR-0003 | One OpenAI-compatible provider client with quirk flags | P0.4 | accepted (2026-09-06) |
 | ADR-0004 | Wire protocol: adopt ACP, extend it, or own JSON-RPC + ACP shim | P1.9 | pending |
 | ADR-0005 | Memory module interface: how much of ALMA's search space is exposed | P2.7 | pending |
 | ADR-0006 | Provenance store at fleet scale: Postgres alone or graph layer | P3.1 | pending |
@@ -572,7 +572,7 @@ From §15 of the dev plan.
 
 | # | Question | Resolves in | Status |
 |---|---|---|---|
-| 1 | Extension mechanism | D8 narrowed it; P0.3 spike recommends process JSON-RPC; ADR-0001 drafted | proposed |
+| 1 | Extension mechanism | D8 narrowed it; P0.3 spike recommends process JSON-RPC; ADR-0001 accepted | decided |
 | 2 | Wire protocol (ACP vs. own) | P1.9 → ADR-0004; transport and auth settled by D11 | partly decided |
 | 3 | Memory module interface scope | P2.7 → ADR-0005 | open |
 | 4 | Provenance store at fleet scale | P3.1 → ADR-0006 | open |
@@ -590,3 +590,4 @@ From §15 of the dev plan.
 | 2026-09-06 | P0.0 repository foundations landed: workspace, nine stub crates, DAG, CI, toolchain pin (1.94.1, MSRV 1.94), `CONTRIBUTING.md`. |
 | 2026-09-06 | P0.3 done (process JSON-RPC recommended, ADR-0001 drafted). P0.2 client + write-up + ADR-0003 draft; real endpoints remain 🧑. P0.5 fake Slurm and mock solver tested; containers and CI job authored, pending first green run. P0.1 spike scripts ready for the login node. P1.0 specs drafted at v0.1 and reconciled, awaiting review. |
 | 2026-09-06 | Model-serving stand-in stack made opt-in in CI (label `ci:standin` / manual); fake Slurm and mock solver self-tests stay on every PR. D18 amended accordingly. |
+| 2026-09-06 | P1.0 specs approved at v0.1; ADR-0001 and ADR-0003 accepted. P1.1 core types landed in `crates/kernel` (in-crate RFC 8785 canonicalizer with `ryu-js`; `serde_json` `float_roundtrip`; `proptest` dev-dependency). Spec clarifications marked **[clarified in P1.1]**: `Net` port rule and host normalization in `narrower_than`; the sandbox envelope excludes `secret:` atoms from `caps`. |

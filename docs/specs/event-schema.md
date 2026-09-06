@@ -1,6 +1,6 @@
 # Event and hash schema specification
 
-- **Status:** draft, awaiting human review (P1.0 🧑)
+- **Status:** approved at v0.1 (2026-09-06); implementation clarifications are marked **[clarified in P1.x]**
 - **Version:** 0.1
 - **Date:** 2026-09-06
 - **Milestone:** P1.0 (D20). Implemented by P1.1 (`Event` enum, hashing module), P1.3 (log writer, redactor, checkpoints, recovery), P1.4 (record/replay, `diff-logs`).

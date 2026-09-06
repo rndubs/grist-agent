@@ -1,6 +1,6 @@
 # Kernel interface specification
 
-- **Status:** draft, awaiting human review (P1.0 🧑)
+- **Status:** approved at v0.1 (2026-09-06); implementation clarifications are marked **[clarified in P1.x]**
 - **Version:** 0.1
 - **Date:** 2026-09-06
 - **Milestone:** P1.0 (D20). Implemented by P1.1 (types), P1.2 (loop), P1.3 (event log, checkpoints), P1.4 (record/replay).
@@ -30,7 +30,7 @@ Shared with `profile-schema.md`; both specs use these verbatim.
 - Serialization via `serde` + `serde_json`. Every type that can appear in `State` or in an event payload derives `Serialize, Deserialize, Clone, Debug, PartialEq` and uses `#[serde(rename_all = "snake_case")]` on enums. Enum tagging is stated per type.
 - Hash strings are `b3:<64 lowercase hex>` (D3). Canonicalization is RFC 8785 (JCS); see `event-schema.md` §3.
 - Time on the wire is an RFC 3339 UTC string with millisecond precision, `2026-09-06T12:34:56.789Z`. `Duration` fields serialize as integer seconds unless stated (`_secs` suffix on the wire) or milliseconds (`_ms` suffix).
-- Third-party dependencies the kernel MAY take: `tokio`, `tokio-util` (`CancellationToken`), `serde`, `serde_json`, `thiserror`, `async-trait`, `blake3`, `futures-core` (`Stream`), `regex` (redactor), and one JCS canonicalizer chosen by P1.1 (`serde_jcs` or equivalent). Nothing else without a note in the P1.1 PR.
+- Third-party dependencies the kernel MAY take: `tokio`, `tokio-util` (`CancellationToken`), `serde`, `serde_json`, `thiserror`, `async-trait`, `blake3`, `futures-core` (`Stream`), `regex` (redactor), and one JCS canonicalizer chosen by P1.1 (`serde_jcs` or equivalent). Nothing else without a note in the P1.1 PR. **[clarified in P1.1]** P1.1 chose an in-crate canonicalizer over `serde_json::Value` with `ryu-js` for ECMAScript number formatting (`event-schema.md` §3.8 test vectors pass), `serde_json` with the `float_roundtrip` feature (its default parser is not correctly rounded, which the RFC 8785 vectors expose), and `proptest` as a dev-dependency for the `Capability` property tests.
 
 ---
 
@@ -144,7 +144,10 @@ impl Capability {
     ///
     /// - `Fs`: `self.path` equals or is under `other.path` component-wise (after normalization,
     ///   no `..`), AND `self.mode <= other.mode` where `Ro <= Ro`, `Ro <= Rw`, `Rw <= Rw`.
-    /// - `Net`: `Hosts(a) <= Hosts(b)` iff `a ⊆ b`; anything `<= Any`; `Any <= Any` only.
+    /// - `Net`: `Hosts(a) <= Hosts(b)` iff every host of `a` is covered by a host of `b` (equal, or
+    ///   `a`'s host carries a port and `b`'s is the same host without one, per `profile-schema.md`
+    ///   §11.4); anything `<= Any`; `Any <= Any` only. Normalization drops a `host:port` whose bare
+    ///   `host` is also listed, so the order is antisymmetric up to normalization. **[clarified in P1.1]**
     /// - `Proc`, `Tool`, `Spawn`, `Secret`: exact name equality.
     pub fn narrower_than(&self, other: &Capability) -> bool;
 
@@ -1146,8 +1149,10 @@ pub const SECRET_LIKE_ENV: &[&str] = &["KEY", "TOKEN", "SECRET", "PASSWORD", "PA
 /// of a `Stateless`/`Session` tool is `PolicyError::SecretInSandbox`).
 ///
 /// `derive_policy(caps, grants)` is `derive_policy_with(caps, grants, &SandboxLimits::default())`.
-/// The session **envelope** is `derive_policy_with(grants, grants, limits)`; its hash is
-/// `State.sandbox_policy_hash`. Per-tool policies are by construction narrower than the envelope.
+/// The session **envelope** is `derive_policy_with(grants_minus_secret_atoms, grants, limits)`; its hash is
+/// `State.sandbox_policy_hash`. `secret:` atoms never affect a sandbox, and passing them as `caps` would
+/// trip `SecretInSandbox`, so the kernel filters them from the envelope's `caps` (not from `grants`).
+/// **[clarified in P1.1]** Per-tool policies are by construction narrower than the envelope.
 /// `profiles` and `sandbox` call these; `sandbox` MAY re-export them as `sandbox::derive_policy`.
 pub fn derive_policy(caps: &[Capability], grants: &[Capability]) -> Result<SandboxPolicy, PolicyError>;
 pub fn derive_policy_with(caps: &[Capability], grants: &[Capability], limits: &SandboxLimits) -> Result<SandboxPolicy, PolicyError>;
