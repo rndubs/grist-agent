@@ -9,7 +9,7 @@ use std::sync::Arc;
 use kernel::event::{AppliedPoint, CheckpointReason};
 use kernel::log::FileEventLog;
 use kernel::*;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use support::*;
 
 fn outcome(v: Value, is_error: bool) -> TaskOutcome {
@@ -31,8 +31,13 @@ fn projection(events: &[Event]) -> Vec<Value> {
             let payload = e.body.payload_value().unwrap();
             let kind = e.body.kind();
             match kind {
-                "resumed" | "recovered" | "warning" | "log_opened" | "session_created"
-                | "profile_load" | "middleware_chain_resolved" => None,
+                "resumed"
+                | "recovered"
+                | "warning"
+                | "log_opened"
+                | "session_created"
+                | "profile_load"
+                | "middleware_chain_resolved" => None,
                 "checkpoint" => Some(json!({
                     "kind": kind,
                     "state_hash": payload["state_hash"],
@@ -83,9 +88,13 @@ async fn run_suspend_resume_in_a_new_process_matches_an_uninterrupted_run() {
     let setup_a = Setup::new(provider_a.clone()).tool(job_a.clone());
     let redactor_a = setup_a.redactor.clone();
     let log_a = Arc::new(
-        FileEventLog::create(&dir.path().join("a.jsonl"), setup_a.session_id.clone(), redactor_a)
-            .await
-            .unwrap(),
+        FileEventLog::create(
+            &dir.path().join("a.jsonl"),
+            setup_a.session_id.clone(),
+            redactor_a,
+        )
+        .await
+        .unwrap(),
     );
     let mut config = setup_a.config();
     config.event_log = log_a.clone();
@@ -155,8 +164,14 @@ async fn run_suspend_resume_in_a_new_process_matches_an_uninterrupted_run() {
     assert_eq!(final_a.pending_tasks, final_b.pending_tasks);
     assert_eq!(projection(&events_a), projection(&events_b));
     // B has exactly one `resumed`, A none; both have one `suspended`.
-    assert_eq!(kinds(&events_a).iter().filter(|k| **k == "resumed").count(), 0);
-    assert_eq!(kinds(&events_b).iter().filter(|k| **k == "resumed").count(), 1);
+    assert_eq!(
+        kinds(&events_a).iter().filter(|k| **k == "resumed").count(),
+        0
+    );
+    assert_eq!(
+        kinds(&events_b).iter().filter(|k| **k == "resumed").count(),
+        1
+    );
     let ups = task_updates(&events_b);
     assert_eq!(ups.len(), 1);
     assert_eq!(ups[0].applied.at, AppliedPoint::Suspended);
@@ -224,7 +239,11 @@ async fn crash_mid_turn_recovers_from_the_last_checkpoint_and_discards_the_tail(
     let mut config = setup.config();
     config.event_log = reopened.clone();
     let mut k2 = Kernel::open(config, ResumeCause::Recovery).await.unwrap();
-    assert_eq!(k2.status(), SessionStatus::Running, "restored mid-conversation");
+    assert_eq!(
+        k2.status(),
+        SessionStatus::Running,
+        "restored mid-conversation"
+    );
     assert_eq!(k2.checkpoint_hash(), &ck_hash);
     let events = reopened.events();
     let rec = find_all(&events, |b| match b {
@@ -290,9 +309,11 @@ async fn a_cleanly_suspended_log_resumes_and_a_secret_never_reaches_the_file() {
     assert!(String::from_utf8_lossy(&bytes).contains("[REDACTED:secret]"));
     // No late_redaction warning: ingress redaction caught it.
     let snap = FileEventLog::snapshot(&path).unwrap();
-    assert!(!snap
-        .iter()
-        .any(|e| matches!(e.unwrap().body, EventBody::Warning(w) if w.class == "late_redaction")));
+    assert!(
+        !snap.iter().any(
+            |e| matches!(e.unwrap().body, EventBody::Warning(w) if w.class == "late_redaction")
+        )
+    );
     assert!(kernel::log::reader::ends_cleanly(
         &snap.effective().map(Result::unwrap).collect::<Vec<_>>()
     ));
