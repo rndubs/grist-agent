@@ -33,7 +33,7 @@ This file is the single source of truth for progress. Update it in the same PR a
 | Phase | Name | Status | Milestones done | Exit criteria met |
 |---|---|---|---|---|
 | P0 | Spikes (de-risk before design freeze) | in progress | 2 / 6 | no |
-| P1 | Kernel + local daemon | in progress | 7 / 10 done (P1.0, P1.1, P1.2, P1.3, P1.5, P1.6, P1.8); P1.7 landed, bwrap tests need a host | no |
+| P1 | Kernel + local daemon | in progress | 8 / 10 done (P1.0–P1.6 except P1.7, P1.8); P1.7 landed, bwrap tests need a host; P1.9 not started | no |
 | P2 | Extensions and specialization | not started | 0 / 9 | no |
 | P3 | Provenance and orchestration | not started | 0 / 7 | no |
 | P4 | Evolve loop | not started | 0 / 7 | no |
@@ -172,12 +172,12 @@ Per D20. Agents implement against signatures, not prose. Each spec is reviewed b
 - [x] Test: run → suspend → resume produces the same payload sequence as an uninterrupted run (`integration_log.rs::run_suspend_resume_in_a_new_process_matches_an_uninterrupted_run`: identical final `state_hash`, messages, tasks, and hashed-event projection)
 - [x] Test: a secret value placed in a tool result never appears in the log file (`crates/kernel/tests/log_file.rs::d10_registered_secret_in_a_tool_result_never_reaches_the_file`; pattern corpus in `redact_corpus.rs`)
 
-### P1.4 — Record/replay — `not started`
+### P1.4 — Record/replay — `done`
 
-- [ ] Recorder middleware captures model responses and tool results keyed by `(checkpoint_hash, request_hash)`
-- [ ] Replay provider and replay tool-invoker serve recorded responses; a cache miss is an error, not a live call
-- [ ] `diff-logs` command: strips envelope fields and asserts byte-identical payloads (D16)
-- [ ] Test: a recorded session replays in under a second with zero network access and `diff-logs` passes
+- [x] Recorder middleware captures model responses and tool results keyed by `(checkpoint_hash, request_hash)`
+- [x] Replay provider and replay tool-invoker serve recorded responses; a cache miss is an error, not a live call
+- [x] `diff-logs` command: strips envelope fields and asserts byte-identical payloads (D16)
+- [x] Test: a recorded session replays in under a second with zero network access and `diff-logs` passes (`crates/kernel/tests/replay_sessions.rs::a_recorded_session_replays_in_under_a_second`: 13 ms debug; `ReplayProvider` holds no client; 23 record/replay scenarios assert `Recorder::cassette() == Cassette::from_log`; `replay_diff.rs` covers every §5.3 volatile field and the `diff-logs` binary)
 
 ### P1.5 — `providers` crate — `done` (stand-in integration tests wired into the opt-in `standin` CI job; first live run needs the `ci:standin` label on the PR)
 
@@ -598,3 +598,4 @@ From §15 of the dev plan.
 | 2026-09-06 | P1.2 loop landed in `crates/kernel/src/loop_/`: `Kernel`, `KernelHandle`, the §6 turn with every cancellation check point, the D1/D2 state machines, retry with full jitter, kernel spill, ingress redaction, chain resolution, registry enforcement, in-process waker, `open` with resume/recovery/migration; 60 loop tests. Clarifications recorded in `kernel-interface.md` §7 as **[clarified in P1.2]**. |
 | 2026-09-06 | P1.8 `profiles` landed with the in-repo `profiles/` tree (catalog, bundles, `stand-in` model, `default` agent): per-file validation with exact TOML paths, D7 merge, bundle and placeholder expansion, symbolic `resolved_profile_hash`, narrowing checks, prompt assembly, `KernelInputs` for the launcher; 63 tests. Clarifications recorded in `profile-schema.md` §13 as **[clarified in P1.8]**. |
 | 2026-09-06 | Phase 1 exit-criteria sessions added in `crates/orchestrator/tests/exit_criteria.rs` (real kernel + `NativeHost` + `None` backend + base tools + file log): coding session recorded, `run_script` suspend/waker/resume recorded, provider exhaustion → `failed` → resume proven. The `orchestrator → sandbox, host` edges are used as dev-dependencies for these tests. |
+| 2026-09-06 | P1.4 record/replay landed in `crates/kernel/src/replay/`: `Cassette` (the log is the cassette), `Recorder` at 990, `ReplayProvider`, `ReplayTool` with the driver's checkpoint tracker, `ReplayDriver`, `diff_logs` and the `diff-logs` binary; 28 tests. Two kernel-shape additions recorded in `kernel-interface.md` §3.6 as **[clarified in P1.4]**: `ToolResult::Replayed(ToolOutput)` and `ToolOutput.in_process_waker`. |

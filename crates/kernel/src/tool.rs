@@ -63,6 +63,13 @@ pub enum ToolResult {
     Blocks(Vec<ContentBlock>),
     /// A started task (D1).
     Task(TaskHandle),
+    /// **[clarified in P1.4]** A complete, already-normalized output served by a replay tool
+    /// (`crate::replay::ReplayTool`). The kernel copies it verbatim — no normalization, no spill —
+    /// and rebuilds `tool_result.spill` from the recorded `Spilled` content when `spilled` is set,
+    /// so `origin`, `is_error`, `spilled`, `artifact_handles`, and `task` reproduce the recorded
+    /// `tool_result` byte for byte. Ingress redaction still runs (idempotent on recorded content).
+    /// Live tools have no reason to return this variant.
+    Replayed(ToolOutput),
 }
 
 /// Tool errors. The doc on each variant says how the kernel treats it.
@@ -262,6 +269,14 @@ pub struct ToolOutput {
     pub task: Option<TaskHandle>,
     /// How the output was produced; copied verbatim on replay.
     pub origin: ToolOutputOrigin,
+    /// **[clarified in P1.4]** `true` iff the tool registered an in-process completion future for
+    /// `task` (`ToolContext::watch_task`). Derived by the kernel after `invoke`, so `after_tool`
+    /// hooks (and the `Recorder`) see the value that `task_started.in_process_waker` and
+    /// `State.pending_tasks` will carry; always `false` when `task` is `None`. In a cassette it
+    /// tells the `ReplayTool` to register a stand-in waker so the replayed session suspends
+    /// exactly like the recorded one.
+    #[serde(default)]
+    pub in_process_waker: bool,
 }
 
 /// How a `ToolOutput` came to be.

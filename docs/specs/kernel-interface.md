@@ -467,6 +467,11 @@ pub enum ToolResult {
     Value(Value),
     Blocks(Vec<ContentBlock>),
     Task(TaskHandle),
+    /// **[clarified in P1.4]** A complete, already-normalized output served by `ReplayTool`. The kernel
+    /// copies it verbatim (no normalization, no spill; `tool_result.spill` is rebuilt from the recorded
+    /// `Spilled` content) so `origin`, `is_error`, `spilled`, `artifact_handles`, and `task` reproduce
+    /// the recorded `tool_result` byte for byte. Live tools never return it.
+    Replayed(ToolOutput),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -569,6 +574,11 @@ pub struct ToolOutput {
     pub task: Option<TaskHandle>,
     /// How the output was produced; copied verbatim on replay.
     pub origin: ToolOutputOrigin,
+    /// **[clarified in P1.4]** `true` iff the tool registered an in-process completion future for
+    /// `task`; set by the kernel after `invoke` so `after_tool` hooks (the `Recorder`) see the value
+    /// `task_started.in_process_waker` will carry, and the replay tool re-registers a stand-in waker.
+    #[serde(default)]
+    pub in_process_waker: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1650,6 +1660,16 @@ impl ReplayDriver {
     pub async fn drive(&self, kernel: &mut Kernel) -> Result<RunStop, ReplayError>;
 }
 
+/// **[clarified in P1.4]** `Recorder` learns `inputs` by subscribing to the kernel's event broadcast
+/// (`Recorder::attach(&handle)` right after `create`/`open`); model and tool entries come from the hooks.
+/// `Cassette::from_log` skips unregistered calls and turn-cancel synthetic results (they bypass
+/// `after_tool`) and, per `event-schema.md` §5.1, a dangling `model_request` contributes nothing.
+/// `ReplayTool` keys lookups on the checkpoint hash the `ReplayDriver` publishes through a
+/// `CheckpointTracker` before each `run_turn`; standalone it falls back to a unique `request_hash`.
+/// `UserAnswer` inputs need no delivery (the `ask_user` result is in `cassette.tools`). Replayed
+/// `TaskUpdate.source` is `{kind: "replay", trust_tier: null, detail: null}`. The replay chain must equal
+/// the recorded chain (including a `Recorder`). Turn-scope cancellation is timing-dependent and is
+/// recorded but not replayable. A mid-turn compaction refreshes `trace.checkpoint_hash` (bug fixed in P1.4).
 /// `diff-logs` (D16): compares two logs' effective `(kind, payload)` sequences after stripping the
 /// volatile fields listed in `event-schema.md` §5.3. Also exposed as `kernel/src/bin/diff-logs.rs`.
 pub fn diff_logs(recorded: &dyn EventLogReader, replayed: &dyn EventLogReader) -> Result<DiffReport, ReplayError>;

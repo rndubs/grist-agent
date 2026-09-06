@@ -132,6 +132,7 @@ fn error_output(msg: String, origin: ToolOutputOrigin) -> ToolOutput {
         spilled: false,
         task: None,
         origin,
+        in_process_waker: false,
     }
 }
 
@@ -143,6 +144,7 @@ fn cancelled_output() -> ToolOutput {
         spilled: false,
         task: None,
         origin: ToolOutputOrigin::Cancelled,
+        in_process_waker: false,
     }
 }
 
@@ -239,6 +241,9 @@ impl Kernel {
         if let Some(strategy) = self.sh.emitter.take_compaction() {
             self.run_compaction(&strategy, tt, turn).await?;
             req.messages = self.state.messages.clone();
+            // The request is now computed from the compaction checkpoint: keep the replay key the
+            // provider sees equal to the one `model_request` logs (`event-schema.md` §5.2).
+            req.trace.checkpoint_hash = self.checkpoint_hash.clone();
         }
         for t in &req.tools {
             if self.sh.registry.get(&t.name).is_none() {
@@ -400,6 +405,7 @@ impl Kernel {
                     spilled: false,
                     task: None,
                     origin: ToolOutputOrigin::Unregistered,
+                    in_process_waker: false,
                 };
                 self.log(EventBody::ToolCall(ToolCallPayload {
                     turn,
@@ -517,8 +523,11 @@ impl Kernel {
                 }
             };
             let duration_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
-            // E6. Normalize.
+            // E6. Normalize. A `Replayed` output (P1.4) is taken verbatim: it is the recorded
+            // post-spill, post-redaction `ToolOutput`, so spill is skipped below.
+            let replayed = matches!(result, Ok(ToolResult::Replayed(_)));
             let mut out = match result {
+                Ok(ToolResult::Replayed(o)) => o,
                 Ok(ToolResult::Value(v)) => match Hash::of_canonical_json(&v) {
                     Ok(_) => ToolOutput {
                         content: ToolResultContent::Json(v),
@@ -527,6 +536,7 @@ impl Kernel {
                         spilled: false,
                         task: None,
                         origin,
+                        in_process_waker: false,
                     },
                     Err(e) => error_output(
                         ToolError::InvalidInput(format!("result is not canonicalizable: {e}"))
@@ -556,6 +566,7 @@ impl Kernel {
                             spilled: false,
                             task: None,
                             origin,
+                            in_process_waker: false,
                         }
                     } else {
                         error_output(
@@ -599,6 +610,7 @@ impl Kernel {
                             spilled: false,
                             task: Some(h),
                             origin,
+                            in_process_waker: false,
                         }
                     }
                 }
@@ -635,6 +647,11 @@ impl Kernel {
             if out.task.is_none() {
                 self.sh.registrar.abort(&task_id);
             }
+            // The waker flag `task_started` and `State` will carry, visible to `after_tool` (P1.4).
+            out.in_process_waker = out
+                .task
+                .as_ref()
+                .is_some_and(|h| self.sh.registrar.was_watched(&h.id));
             // Ingress redaction (§7.5) before hashing, spill, and `after_tool`.
             self.sh
                 .redact(&mut out)
@@ -656,9 +673,12 @@ impl Kernel {
                 }))
                 .await?;
             }
-            // Spill (§7.4).
-            let (spill_ref, warnings) =
-                spill::apply(&mut out, &self.sh.spill, &*self.sh.artifacts, turn).await;
+            // Spill (§7.4); a replayed output is already post-spill (P1.4).
+            let (spill_ref, warnings) = if replayed {
+                (crate::replay::recorded_spill_ref(&out), Vec::new())
+            } else {
+                spill::apply(&mut out, &self.sh.spill, &*self.sh.artifacts, turn).await
+            };
             for w in warnings {
                 self.log(EventBody::Warning(w)).await?;
             }

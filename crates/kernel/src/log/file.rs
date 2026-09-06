@@ -298,6 +298,17 @@ impl FileEventLog {
         Ok(SnapshotReader::new(parse_log(&bytes)?.lines))
     }
 
+    /// Read a whole file synchronously. For `replay::Cassette::read_from`: the cassette is, like
+    /// the log, the kernel's own store and takes no policy (`tests/no_std_fs_process.rs`).
+    pub(crate) fn read_file_bytes(path: &Path) -> Result<Vec<u8>, LogError> {
+        std::fs::read(path).map_err(io_err)
+    }
+
+    /// Write (create or truncate) a whole file synchronously. For `replay::Cassette::write_to`.
+    pub(crate) fn write_file_bytes(path: &Path, bytes: &[u8]) -> Result<(), LogError> {
+        std::fs::write(path, bytes).map_err(io_err)
+    }
+
     /// The file this log writes to.
     pub fn path(&self) -> &Path {
         &self.path

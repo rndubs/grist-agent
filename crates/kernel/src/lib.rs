@@ -57,6 +57,10 @@ pub use provider::{
     RequestTrace, StopReason, ThinkingConfig, Usage,
 };
 pub use redact::{RedactionReport, Redactor};
+pub use replay::{
+    Cassette, CassetteKey, DiffReport, Recorder, ReplayDriver, ReplayError, ReplayInput,
+    ReplayProvider, ReplayTool, diff_logs,
+};
 pub use sandbox::{
     PolicyError, RpcRequest, RpcResponse, SECRET_LIKE_ENV, SandboxBackend, SandboxError,
     SandboxLimits, SandboxPolicy, SessionProcess, derive_policy, derive_policy_with,

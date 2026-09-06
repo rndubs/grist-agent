@@ -418,6 +418,7 @@ fn tool_call_hashes_are_as_specified() {
         spilled: false,
         task: None,
         origin: ToolOutputOrigin::Invoke,
+        in_process_waker: false,
     };
     let j = round_trip(&out);
     assert_eq!(j["origin"], "invoke");
