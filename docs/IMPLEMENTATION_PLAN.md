@@ -33,7 +33,7 @@ This file is the single source of truth for progress. Update it in the same PR a
 | Phase | Name | Status | Milestones done | Exit criteria met |
 |---|---|---|---|---|
 | P0 | Spikes (de-risk before design freeze) | in progress | 2 / 6 | no |
-| P1 | Kernel + local daemon | in progress | 6 / 10 done (P1.0, P1.1, P1.2, P1.5, P1.6, P1.8); P1.3, P1.7 landed pending cross-milestone tests | no |
+| P1 | Kernel + local daemon | in progress | 7 / 10 done (P1.0, P1.1, P1.2, P1.3, P1.5, P1.6, P1.8); P1.7 landed, bwrap tests need a host | no |
 | P2 | Extensions and specialization | not started | 0 / 9 | no |
 | P3 | Provenance and orchestration | not started | 0 / 7 | no |
 | P4 | Evolve loop | not started | 0 / 7 | no |
@@ -161,15 +161,15 @@ Per D20. Agents implement against signatures, not prose. Each spec is reviewed b
 - [x] Tool registry: the loop can only invoke tools registered at construction (enforcement level 1 of §6)
 - [x] Loop tests with a fake provider and fake tools: plain turn, tool call turn, multi-tool turn, task started then suspend, task completion injected while running, cancellation mid-tool, retry exhaustion, spill (`crates/kernel/tests/loop_{turns,tasks,cancel,retry,spill,middleware,open,registry}.rs`, 60 tests; the five §6 invariants each have an assertion helper)
 
-### P1.3 — Event log and checkpoints — `in progress` (log, redactor, checkpoints, restore, and the log-level recovery data path landed with tests; the kernel-level suspend/resume and crash-recovery tests land with P1.2)
+### P1.3 — Event log and checkpoints — `done`
 
 - [x] Append-only JSONL writer with the D3 envelope; one file per session; never rewritten
 - [x] Redactor in the log writer: known secret values and common token patterns scrubbed before any payload is written (D10)
 - [x] Checkpoint = event carrying the state hash plus enough to restore `State`
 - [x] `restore(checkpoint_hash) -> State`
-- [ ] Crash recovery: on start with an existing log, restore the last checkpoint and discard later events (D15)
-- [ ] Suspend persists state and releases the process; resume restores from the latest checkpoint and continues
-- [ ] Test: run → suspend → resume produces the same payload sequence as an uninterrupted run
+- [x] Crash recovery: on start with an existing log, restore the last checkpoint and discard later events (D15) (`Kernel::open`; `crates/kernel/tests/integration_log.rs::crash_mid_turn_recovers_from_the_last_checkpoint_and_discards_the_tail` on a real file)
+- [x] Suspend persists state and releases the process; resume restores from the latest checkpoint and continues (`Kernel::open` with a `TaskUpdate` cause on the reopened file)
+- [x] Test: run → suspend → resume produces the same payload sequence as an uninterrupted run (`integration_log.rs::run_suspend_resume_in_a_new_process_matches_an_uninterrupted_run`: identical final `state_hash`, messages, tasks, and hashed-event projection)
 - [x] Test: a secret value placed in a tool result never appears in the log file (`crates/kernel/tests/log_file.rs::d10_registered_secret_in_a_tool_result_never_reaches_the_file`; pattern corpus in `redact_corpus.rs`)
 
 ### P1.4 — Record/replay — `not started`
