@@ -227,7 +227,7 @@ Depends on P0.1 / ADR-0002.
 
 Open question §15.2 (wire protocol) is decided here.
 
-- [ ] Evaluate Agent Client Protocol (ACP) as the wire format; **ADR-0004** records adopt / extend / own-schema-with-ACP-shim
+- [ ] Evaluate Agent Client Protocol (ACP) as the wire format; **ADR-0004** records adopt / extend / own-schema-with-ACP-shim (drafted 2026-09-06 as `docs/adr/0004-wire-protocol.md`, status **proposed**: adopt ACP v2 on both legs, `_grist/*` for the log-facing events and the `Tool`/`Task` cancel scopes, an off-the-shelf ACP client instead of a bespoke UI; box ticks when the ADR is accepted)
 - [ ] JSON-RPC over stdio (kernel) and unix socket (supervisor daemon that spawns one kernel process per session, D4)
 - [ ] Socket auth: file permissions plus peer-credential check (D11)
 - [ ] Protocol covers: start session, send user message, stream events, `ask_user` round trip (D17), cancel (D15), suspend, resume, replay, end session
@@ -560,7 +560,7 @@ Maps §14 risks, plus two surfaced in review, to the milestones that mitigate th
 | ADR-0001 | Out-of-process tool mechanism (process JSON-RPC vs. WASM), recording the D8 tier split | P0.4 | accepted (2026-09-06) |
 | ADR-0002 | Sandbox stack on the HPC login node and fallback | P0.4 | pending |
 | ADR-0003 | One OpenAI-compatible provider client with quirk flags | P0.4 | accepted (2026-09-06) |
-| ADR-0004 | Wire protocol: adopt ACP, extend it, or own JSON-RPC + ACP shim | P1.9 | pending |
+| ADR-0004 | Wire protocol: adopt ACP, extend it, or own JSON-RPC + ACP shim | P1.9 | **draft (proposed) 2026-09-06** — recommends adopting ACP v2 with a `_grist/*` extension namespace; awaits the human |
 | ADR-0005 | Memory module interface: how much of ALMA's search space is exposed | P2.7 | pending |
 | ADR-0006 | Provenance store at fleet scale: Postgres alone or graph layer | P3.1 | pending |
 | ADR-0007 | Sub-agent capability pruning: automated vs. proposed-for-review | P4.6 | pending |
@@ -574,7 +574,7 @@ From §15 of the dev plan.
 | # | Question | Resolves in | Status |
 |---|---|---|---|
 | 1 | Extension mechanism | D8 narrowed it; P0.3 spike recommends process JSON-RPC; ADR-0001 accepted | decided |
-| 2 | Wire protocol (ACP vs. own) | P1.9 → ADR-0004; transport and auth settled by D11 | partly decided |
+| 2 | Wire protocol (ACP vs. own) | P1.9 → ADR-0004 (drafted 2026-09-06, status proposed); transport and auth settled by D11 | partly decided |
 | 3 | Memory module interface scope | P2.7 → ADR-0005 | open |
 | 4 | Provenance store at fleet scale | P3.1 → ADR-0006 | open |
 | 5 | Capability pruning automation | P4.6 → ADR-0007 | open |
@@ -604,3 +604,4 @@ From §15 of the dev plan.
 | 2026-09-06 | Launcher-path test over the shipped `profiles/` tree (`crates/orchestrator/tests/launcher.rs`); `orchestrator → profiles` recorded as a dev edge. Risk register: secrets, middleware ordering, and profile-structure risks marked mitigated. README status refreshed. |
 | 2026-09-06 | Dev plan bumped to v0.2 (D1–D20, ADR-0001/0003, spike outcomes folded in; specs named normative). PR #3 opened with the `ci:standin` label. |
 | 2026-09-06 | P1.5 verified locally against a native stand-in (no container engine on the host): `standin/up.sh --print-env`, smoke (a)+(b), all five `providers` stand-in tests under `GRIST_REQUIRE_STANDIN=1`, and `spikes/provider-client/run-against.sh standin` on Qwen2.5-1.5B and Qwen3-1.7B; rows and versions in `docs/spikes/providers.md` §2.4, native recipe and two upstream drifts (Qwen3 GGUF filename, LiteLLM `v1.99.1` has no PyPI release) in `docs/standin.md`. P1.7's five `bwrap` tests still unrun: that host is macOS with no `bwrap`, so P1.7 and ADR-0002 are unchanged. Smoke part (c) needs a Linux userland (`setsid`, `flock`, bash ≥ 4) and stays with the `standin-scripts` CI job. |
+| 2026-09-06 | **ADR-0004 drafted** (`docs/adr/0004-wire-protocol.md`, status proposed): ACP evaluated against D4, D11, D15, D17, the 28 event kinds and the "Windows/macOS/Linux, no CLI" client requirement. Proposal is to adopt ACP v2 on both legs (unix socket to the supervisor, stdio to the one-session kernel), carry the twelve log-facing event kinds and the `Tool`/`Task` cancel scopes in a `_grist/*` extension namespace, and make the first client an off-the-shelf ACP editor with a stdio↔socket forwarder instead of a bespoke Tauri shell. Not accepted; P1.9 is still `not started`. |
