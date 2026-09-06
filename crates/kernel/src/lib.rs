@@ -15,7 +15,7 @@ pub mod content;
 pub mod event;
 pub mod hash;
 pub mod host;
-pub mod kernel;
+pub mod loop_;
 pub mod log;
 pub mod memory;
 pub mod middleware;

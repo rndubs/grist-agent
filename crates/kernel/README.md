@@ -20,5 +20,5 @@ events and hashes are `docs/specs/event-schema.md`.
 | `cancel`, `event`, `redact`, `config` | §3.13–§3.15: tokens, the 28 event kinds, redactor, plain config types | P1.1 |
 | `log` (`MemoryEventLog`, reader helpers) | §3.14, `event-schema.md` §6 | P1.1 |
 | `log::file` (`FileEventLog`, JSONL, fsync) | §3.14, `event-schema.md` §1 | P1.3 |
-| `kernel`, `loop_` | §3.15, §4–§7: `Kernel`, `KernelHandle`, the loop | P1.2 |
+| `loop_` | §3.15, §4–§7: `Kernel`, `KernelHandle`, the loop | P1.2 |
 | `replay` (+ `bin/diff-logs`) | §3.16, `event-schema.md` §5 | P1.4 |
