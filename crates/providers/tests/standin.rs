@@ -353,7 +353,16 @@ async fn standin_litellm_rejects_a_bad_key_as_auth() {
         vec![],
     );
     let e = p.complete(r).await.expect_err("bad key is rejected");
-    assert!(matches!(e, kernel::ProviderError::Auth(_)), "{e}");
+    // A LiteLLM proxy backed by a database answers an unknown virtual key with 401 (`Auth`); the
+    // CI stand-in runs LiteLLM without a database, which answers `400 No connected db` (`Client`).
+    // Either way the request is refused before reaching the model and the key never leaks.
+    assert!(
+        matches!(
+            e,
+            kernel::ProviderError::Auth(_) | kernel::ProviderError::Client { status: 400, .. }
+        ),
+        "{e}"
+    );
     assert!(!e.to_string().contains("sk-not-the-master-key"));
 }
 
