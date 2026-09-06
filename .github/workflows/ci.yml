@@ -40,6 +40,14 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      # Also lint the default feature set: the `None` sandbox backend is feature-gated (D14).
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: None sandbox backend is absent from a default build (D14)
+        run: |
+          if cargo check -p sandbox --example none_backend_symbol 2>/dev/null; then
+            echo "sandbox::NoneBackend is reachable without the dev-sandbox-none feature"; exit 1
+          fi
+          cargo check -p sandbox --example none_backend_symbol --features dev-sandbox-none
 
   test:
     name: cargo test
@@ -125,20 +133,15 @@ jobs:
         run: spikes/provider-client/run-against.sh standin
 
       # ===== P1.5 / P3.4 HOOK ===================================================
-      # Integration tests against the stand-in go here. They read:
+      # Integration tests against the stand-in. They read:
       #   STANDIN_OPENAI_BASE_URL   llama.cpp  (OpenAI-compatible, no auth)
       #   STANDIN_LITELLM_BASE_URL  LiteLLM proxy
       #   STANDIN_LITELLM_KEY       master key
       #   STANDIN_MODEL             alias; use stand-in/$STANDIN_MODEL through LiteLLM
-      # Replace the echo with the real command when crates/providers lands, e.g.
-      #   cargo test -p providers --features standin-integration -- --nocapture
+      # The P3.4 waker test plugs in here too when it exists.
       # ==========================================================================
-      - name: Provider integration tests (P1.5 hook)
-        run: |
-          echo "P1.5 hook: no integration tests registered yet."
-          echo "  STANDIN_OPENAI_BASE_URL=$STANDIN_OPENAI_BASE_URL"
-          echo "  STANDIN_LITELLM_BASE_URL=$STANDIN_LITELLM_BASE_URL"
-          echo "  STANDIN_MODEL=$STANDIN_MODEL"
+      - name: Provider integration tests (P1.5)
+        run: cargo test -p providers --features standin-integration -- --nocapture
 
       - name: Stack logs
         if: failure()
