@@ -1,0 +1,15 @@
+[package]
+name = "ext"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "Extension API and first-party extensions: MCP client, sub-agent spawn, skills loader, memory modules, workflow runner, Python REPL tool, capability gate."
+
+[dependencies]
+kernel.workspace = true
+
+[lints]
+workspace = true

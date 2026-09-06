@@ -1,0 +1,6 @@
+# Pinned toolchain (P0.0). Bump deliberately; record the new MSRV in Cargo.toml
+# `workspace.package.rust-version` and in CONTRIBUTING.md at the same time.
+[toolchain]
+channel = "1.94.1"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

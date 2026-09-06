@@ -32,7 +32,7 @@ This file is the single source of truth for progress. Update it in the same PR a
 
 | Phase | Name | Status | Milestones done | Exit criteria met |
 |---|---|---|---|---|
-| P0 | Spikes (de-risk before design freeze) | not started | 0 / 6 | no |
+| P0 | Spikes (de-risk before design freeze) | in progress | 1 / 6 | no |
 | P1 | Kernel + local daemon | not started | 0 / 10 | no |
 | P2 | Extensions and specialization | not started | 0 / 9 | no |
 | P3 | Provenance and orchestration | not started | 0 / 7 | no |
@@ -47,15 +47,15 @@ Dependency order is strict between phases (P0 → P1 → P2 → P3 → P4 → P5
 
 **Purpose:** validate the assumptions the design rests on before writing kernel code. Spike code is throwaway; the *decisions* and the CI stand-in stack are the deliverables.
 
-### P0.0 — Repository foundations — `not started`
+### P0.0 — Repository foundations — `done`
 
-- [ ] Cargo workspace with stub crates matching §3.1: `kernel`, `providers`, `host`, `ext`, `profiles`, `sandbox`, `orchestrator`, `provenance`, `evolve` (each compiles, exports nothing)
-- [ ] Workspace dependency DAG written down in `crates/README.md`: `kernel` depends on nothing in-repo; `ext`, `profiles`, `sandbox`, `provenance`, `orchestrator`, `evolve` depend on `kernel`; nothing depends on `evolve`
-- [ ] `spikes/` directory for throwaway P0 code, excluded from the workspace build
-- [ ] CI: `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test` on every PR
-- [ ] Toolchain pinned (`rust-toolchain.toml`); MSRV recorded; tokio chosen as the async runtime (D4)
-- [ ] ADR template at `docs/adr/0000-template.md`; ADR index in `docs/adr/README.md`
-- [ ] `CONTRIBUTING.md` stating the kernel-boundary rule, the tick-on-merge convention, and that `design-decisions.md` is binding
+- [x] Cargo workspace with stub crates matching §3.1: `kernel`, `providers`, `host`, `ext`, `profiles`, `sandbox`, `orchestrator`, `provenance`, `evolve` (each compiles, exports nothing)
+- [x] Workspace dependency DAG written down in `crates/README.md`: `kernel` depends on nothing in-repo; `ext`, `profiles`, `sandbox`, `provenance`, `orchestrator`, `evolve` depend on `kernel`; nothing depends on `evolve`
+- [x] `spikes/` directory for throwaway P0 code, excluded from the workspace build
+- [x] CI: `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test` on every PR
+- [x] Toolchain pinned (`rust-toolchain.toml`); MSRV recorded; tokio chosen as the async runtime (D4)
+- [x] ADR template at `docs/adr/0000-template.md`; ADR index in `docs/adr/README.md`
+- [x] `CONTRIBUTING.md` stating the kernel-boundary rule, the tick-on-merge convention, and that `design-decisions.md` is binding
 
 ### P0.1 — Sandbox nesting spike on the HPC login node — `not started` 🧑
 
@@ -513,9 +513,9 @@ Checked at every phase boundary.
 
 ### Kernel boundary discipline
 
-- [ ] `CONTRIBUTING.md` rule in place (P0.0)
+- [x] `CONTRIBUTING.md` rule in place (P0.0)
 - [ ] CI check or CODEOWNERS on `crates/kernel/` requiring an ADR link in the PR (from P1 exit onward)
-- [ ] `kernel` has no dependency on any other in-repo crate (enforced by the P0.0 DAG and a test)
+- [x] `kernel` has no dependency on any other in-repo crate (enforced by the P0.0 DAG and a test: `crates/kernel/tests/no_in_repo_deps.rs`)
 
 ### Schema versioning
 
@@ -525,7 +525,7 @@ Checked at every phase boundary.
 
 - [ ] `docs/adr/` index current
 - [ ] `docs/specs/` kept in step with the code; a spec change and its implementation land in the same PR
-- [ ] Each crate has a `README.md` stating its responsibility and whether the evolve loop may mutate it (§3.1 table)
+- [x] Each crate has a `README.md` stating its responsibility and whether the evolve loop may mutate it (§3.1 table)
 - [ ] Dev plan revised at each phase exit (v0.2 after P0, v0.3 after P1, …)
 
 ---
@@ -587,3 +587,4 @@ From §15 of the dev plan.
 |---|---|
 | 2026-09-06 | Initial plan derived from dev plan v0.1 |
 | 2026-09-06 | Adversarial review; twenty decisions recorded in `design-decisions.md` and folded in. Added P0.5 CI stand-in stack, P1.0 interface specs, Backlog section, human-required markers. |
+| 2026-09-06 | P0.0 repository foundations landed: workspace, nine stub crates, DAG, CI, toolchain pin (1.94.1, MSRV 1.94), `CONTRIBUTING.md`. |

@@ -11,4 +11,13 @@ A minimal, embeddable, self-improvable agent kernel for simulation and engineeri
 
 ## Status
 
-Phase 0 (spikes) has not started. See the progress summary at the top of the implementation plan.
+Phase 0 (spikes) is in progress: P0.0 repository foundations are done. See the progress summary at the top of the implementation plan.
+
+## Building
+
+```
+cargo build --workspace
+cargo test --workspace
+```
+
+The toolchain is pinned in `rust-toolchain.toml`. See `CONTRIBUTING.md` for the rules and `crates/README.md` for the crate layout.
