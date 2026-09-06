@@ -17,6 +17,9 @@ fn replacement(kind: &str) -> String {
 /// Values shorter than this are not registered (too many false positives).
 pub const MIN_SECRET_LEN: usize = 8;
 
+/// The name reported by `take_short_names` for a too-short value registered without a name.
+pub const UNNAMED_SECRET: &str = "<unnamed>";
+
 struct Pattern {
     kind: &'static str,
     re: Regex,
@@ -124,12 +127,16 @@ impl Redactor {
     }
 
     /// Register a known secret value. Values shorter than 8 bytes are ignored (and reported by
-    /// `take_short_names` so the kernel can log `warning{class: "secret_too_short"}`).
+    /// `take_short_names` so the kernel can log `warning{class: "secret_too_short"}`). The
+    /// too-short value itself is never recorded (it would end up in a warning payload); an
+    /// unnamed registration is reported as `UNNAMED_SECRET`, once.
     pub fn register_secret(&self, value: &SecretString) {
         let v = value.expose();
         if v.len() < MIN_SECRET_LEN {
-            if let Ok(mut s) = self.short.write() {
-                s.push(v.to_owned());
+            if let Ok(mut s) = self.short.write()
+                && !s.iter().any(|n| n == UNNAMED_SECRET)
+            {
+                s.push(UNNAMED_SECRET.to_owned());
             }
             return;
         }
@@ -157,7 +164,8 @@ impl Redactor {
         true
     }
 
-    /// Names (or values) that were too short to register since the last call; each once.
+    /// Names of secrets that were too short to register since the last call; each once. Values
+    /// are never reported.
     pub fn take_short_names(&self) -> Vec<String> {
         self.short
             .write()
@@ -260,8 +268,10 @@ mod tests {
     fn short_values_are_not_registered() {
         let r = Redactor::new();
         r.register_secret(&SecretString::new("short"));
+        r.register_secret(&SecretString::new("tiny"));
         assert_eq!(r.known_count(), 0);
-        assert_eq!(r.take_short_names(), vec!["short".to_owned()]);
+        // The value itself is never recorded (it would leak into the warning payload).
+        assert_eq!(r.take_short_names(), vec![UNNAMED_SECRET.to_owned()]);
         assert!(r.take_short_names().is_empty());
         let (out, _) = r.redact_str("short text");
         assert_eq!(out, "short text");

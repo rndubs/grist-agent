@@ -8,7 +8,7 @@ use serde_json::Value;
 use super::reader;
 use super::{EventLog, EventLogReader, LogError, RestoreError};
 use crate::SessionId;
-use crate::event::{CheckpointPayload, Event, EventBody, WarningPayload};
+use crate::event::{CheckpointPayload, Event, EventBody};
 use crate::hash::Hash;
 use crate::redact::Redactor;
 use crate::state::{Migrated, MigrationRegistry};
@@ -75,7 +75,8 @@ impl MemoryEventLog {
 }
 
 /// Redact `body`'s payload with the writer pass; returns the redacted body, its raw payload, and
-/// how many spans changed (a non-zero count is a `late_redaction`).
+/// how many spans changed (a non-zero count is a `late_redaction`). Both log implementations
+/// reach this through `log::writer::stage`.
 pub fn writer_redact(
     redactor: &Redactor,
     body: &EventBody,
@@ -101,45 +102,12 @@ impl EventLog for MemoryEventLog {
     }
 
     async fn append(&self, body: EventBody) -> Result<Event, LogError> {
-        let (body, raw_payload, late) = writer_redact(&self.redactor, &body)?;
+        // The lock serializes seq assignment, the writer-side redaction pass, and the push.
         let mut lines = self.lines.lock().map_err(|_| LogError::Closed)?;
-        let seq = lines.len() as u64;
-        let event = Event {
-            seq,
-            ts: crate::time::now_rfc3339_ms(),
-            session_id: self.session_id.clone(),
-            body,
-        };
-        lines.push(Line {
-            event: event.clone(),
-            raw_payload,
-        });
-        if late > 0 {
-            let turn = event
-                .body
-                .payload_value()
-                .ok()
-                .and_then(|p| p.get("turn").and_then(Value::as_u64))
-                .unwrap_or(0);
-            let warn = EventBody::Warning(WarningPayload::kernel(
-                turn,
-                "late_redaction",
-                "writer-side redaction changed a payload; an ingress path was missed",
-                Some(serde_json::json!({"seq": seq, "replacements": late})),
-            ));
-            let wseq = lines.len() as u64;
-            let raw_payload = warn.payload_value().unwrap_or(Value::Null);
-            lines.push(Line {
-                event: Event {
-                    seq: wseq,
-                    ts: crate::time::now_rfc3339_ms(),
-                    session_id: self.session_id.clone(),
-                    body: warn,
-                },
-                raw_payload,
-            });
-        }
-        Ok(event)
+        let next_seq = lines.len() as u64;
+        let staged = super::writer::stage(&self.session_id, next_seq, &self.redactor, body)?;
+        lines.extend(staged.lines);
+        Ok(staged.event)
     }
 
     fn last_seq(&self) -> Option<u64> {
@@ -155,7 +123,8 @@ impl EventLog for MemoryEventLog {
     }
 }
 
-/// A reader over a snapshot of lines. Shared by `MemoryEventLog` and `FileEventLog`.
+/// A reader over a snapshot of lines. Shared by `MemoryEventLog` and `FileEventLog`
+/// (`FileEventLog::snapshot` builds one straight from a path).
 pub struct SnapshotReader {
     lines: Vec<Line>,
     effective: Vec<Event>,
@@ -167,6 +136,27 @@ impl SnapshotReader {
         let events: Vec<Event> = lines.iter().map(|l| l.event.clone()).collect();
         let effective = reader::effective(&events);
         SnapshotReader { lines, effective }
+    }
+
+    /// Every physical line.
+    pub fn lines(&self) -> &[Line] {
+        &self.lines
+    }
+
+    /// Every physical event.
+    pub fn events(&self) -> Vec<Event> {
+        self.lines.iter().map(|l| l.event.clone()).collect()
+    }
+
+    /// The effective events (`event-schema.md` §6.1).
+    pub fn effective_events(&self) -> &[Event] {
+        &self.effective
+    }
+
+    /// Whether the log ends cleanly (`kernel-interface.md` §7.3): the last effective event is
+    /// `suspended`, `session_ended`, `session_failed`, or a `checkpoint` with `session_status: idle`.
+    pub fn ends_cleanly(&self) -> bool {
+        reader::ends_cleanly(&self.effective)
     }
 
     fn raw_payload(&self, seq: u64) -> Option<Value> {

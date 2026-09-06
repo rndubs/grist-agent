@@ -173,11 +173,10 @@ pub mod reader {
         checkpoint_hash: Option<&Hash>,
         migrations: &MigrationRegistry,
     ) -> Result<Option<Migrated>, RestoreError> {
-        let found = effective.iter().rev().find_map(|e| match &e.body {
-            EventBody::Checkpoint(c) if checkpoint_hash.is_none_or(|h| h == &c.state_hash) => {
-                Some((e.seq, c.state_hash.clone()))
-            }
-            _ => None,
+        let found = effective.iter().rev().find_map(|e| {
+            checkpoint_hash_of(e)
+                .filter(|h| checkpoint_hash.is_none_or(|want| want == h))
+                .map(|h| (e.seq, h))
         });
         let Some((seq, recorded)) = found else {
             return match checkpoint_hash {
@@ -199,6 +198,21 @@ pub mod reader {
         Ok(Some(migrations.migrate_to_current(raw_state)?))
     }
 
+    /// The `state_hash` of a checkpoint event. Besides typed `Checkpoint` events this also
+    /// recognizes `Unknown { kind: "checkpoint" }`, which is how the file reader keeps an
+    /// old-`schema_version` checkpoint whose `state` no longer deserializes into the current
+    /// `State` (`kernel-interface.md` §3.4: migrations run on the raw JSON for exactly this case).
+    pub fn checkpoint_hash_of(e: &Event) -> Option<Hash> {
+        match &e.body {
+            EventBody::Checkpoint(c) => Some(c.state_hash.clone()),
+            EventBody::Unknown { kind, payload } if kind == "checkpoint" => payload
+                .get("state_hash")
+                .and_then(Value::as_str)
+                .and_then(|s| Hash::parse(s).ok()),
+            _ => None,
+        }
+    }
+
     /// A log ends cleanly iff its last effective event is `suspended`, `session_ended`,
     /// `session_failed`, or a `checkpoint` whose `session_status` is `idle` (§7.3).
     pub fn ends_cleanly(effective: &[Event]) -> bool {
@@ -207,7 +221,118 @@ pub mod reader {
             | Some(EventBody::SessionEnded(_))
             | Some(EventBody::SessionFailed(_)) => true,
             Some(EventBody::Checkpoint(c)) => c.session_status == crate::state::SessionStatus::Idle,
+            // An old-schema checkpoint kept raw (see `checkpoint_hash_of`).
+            Some(EventBody::Unknown { kind, payload }) if kind == "checkpoint" => {
+                payload.get("session_status").and_then(Value::as_str) == Some("idle")
+            }
             _ => false,
         }
+    }
+}
+
+/// Shared writer-side logic (`event-schema.md` §4.1 pass 2, §1.2): the redaction pass and its
+/// `late_redaction` follow-up, the fsync rule, and the on-disk envelope line. Both
+/// `MemoryEventLog` and `FileEventLog` go through `stage`, so they cannot drift.
+pub mod writer {
+    use super::memory::{Line, writer_redact};
+    use super::*;
+    use crate::event::WarningPayload;
+    use crate::redact::Redactor;
+
+    /// What one `append` produces: the event as written (redacted, with `seq`/`ts` assigned) and
+    /// the physical lines to store — the event line and, when the writer pass changed something,
+    /// the `warning{class: "late_redaction"}` that follows it (`event-schema.md` §4.1).
+    #[derive(Clone, Debug)]
+    pub struct Staged {
+        /// The event as written.
+        pub event: Event,
+        /// One or two lines, `seq` consecutive from `event.seq`.
+        pub lines: Vec<Line>,
+    }
+
+    /// Stage `body` for writing at `next_seq`: run the writer-side redaction pass, assign `seq`
+    /// and `ts`, and produce the `late_redaction` warning if the pass changed anything.
+    pub fn stage(
+        session_id: &SessionId,
+        next_seq: u64,
+        redactor: &Redactor,
+        body: EventBody,
+    ) -> Result<Staged, LogError> {
+        let (body, raw_payload, late) = writer_redact(redactor, &body)?;
+        let event = Event {
+            seq: next_seq,
+            ts: crate::time::now_rfc3339_ms(),
+            session_id: session_id.clone(),
+            body,
+        };
+        let mut lines = vec![Line {
+            event: event.clone(),
+            raw_payload,
+        }];
+        if late > 0 {
+            let warn = late_redaction_warning(&event, late);
+            let raw_payload = warn
+                .payload_value()
+                .map_err(|e| LogError::Io(e.to_string()))?;
+            lines.push(Line {
+                event: Event {
+                    seq: next_seq + 1,
+                    ts: crate::time::now_rfc3339_ms(),
+                    session_id: session_id.clone(),
+                    body: warn,
+                },
+                raw_payload,
+            });
+        }
+        Ok(Staged { event, lines })
+    }
+
+    /// `warning{class: "late_redaction", detail: {seq, replacements}}` for `offending`.
+    pub fn late_redaction_warning(offending: &Event, replacements: u32) -> EventBody {
+        let turn = offending
+            .body
+            .payload_value()
+            .ok()
+            .and_then(|p| p.get("turn").and_then(Value::as_u64))
+            .unwrap_or(0);
+        EventBody::Warning(WarningPayload::kernel(
+            turn,
+            "late_redaction",
+            "writer-side redaction changed a payload; an ingress path was missed",
+            Some(serde_json::json!({"seq": offending.seq, "replacements": replacements})),
+        ))
+    }
+
+    /// Whether the writer MUST `fsync` after this event (`event-schema.md` §1.2 requires it for
+    /// `checkpoint`; the terminal/suspension records are synced too since they are the last thing
+    /// a process writes before exiting).
+    pub fn needs_fsync(body: &EventBody) -> bool {
+        matches!(
+            body,
+            EventBody::Checkpoint(_)
+                | EventBody::Suspended(_)
+                | EventBody::SessionEnded(_)
+                | EventBody::SessionFailed(_)
+        )
+    }
+
+    /// One JSONL line for `event`, with `raw_payload` written verbatim, in the envelope member
+    /// order of `event-schema.md` §1.1 (`seq`, `ts`, `session_id`, `kind`, `payload`), terminated
+    /// by `\n`.
+    pub fn envelope_line(event: &Event, raw_payload: &Value) -> Result<String, LogError> {
+        let io = |e: serde_json::Error| LogError::Io(e.to_string());
+        let mut s = String::with_capacity(128);
+        s.push_str("{\"seq\":");
+        s.push_str(&event.seq.to_string());
+        s.push_str(",\"ts\":");
+        s.push_str(&serde_json::to_string(&event.ts).map_err(io)?);
+        s.push_str(",\"session_id\":");
+        s.push_str(&serde_json::to_string(&event.session_id).map_err(io)?);
+        s.push_str(",\"kind\":");
+        s.push_str(&serde_json::to_string(event.body.kind()).map_err(io)?);
+        s.push_str(",\"payload\":");
+        s.push_str(&serde_json::to_string(raw_payload).map_err(io)?);
+        s.push_str("}\n");
+        Ok(s)
     }
 }

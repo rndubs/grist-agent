@@ -39,6 +39,8 @@ The Rust side is `Event { seq, ts, session_id, #[serde(flatten)] body: EventBody
 - The writer MUST `fsync` after every `checkpoint` line before reporting the append as complete (durability of the last-good state); it SHOULD flush other lines promptly.
 - A reader MUST tolerate a truncated final line (a crash mid-write): it is treated as absent, and `seq` continues from the last complete line. A reader MUST fail on a malformed line that is not the last line (`LogError::Malformed`).
 
+**[clarified in P1.3]** `open` on an empty file, or one whose line 0 is not `log_opened`, is `LogError::Malformed{line: 1}`; `create` on an existing path is `LogError::Io` (never clobbers). A torn final line is dropped by truncating the file to the last complete newline on `open`, the only in-place operation ever performed. `NewerSchema` is also raised when a `resumed`/`recovered` line stamps a newer `event_schema_version`. The writer also fsyncs `suspended`, `session_ended`, and `session_failed`. A `checkpoint` whose `state` no longer deserializes is kept raw only when its `schema_version` is older than the kernel's, so `restore` can migrate it; any other undeserializable payload of a known kind is `Malformed`. On-disk `payload` member order is alphabetical; envelope members keep the §1.1 order.
+
 ### 1.3 Schema version
 
 `EVENT_SCHEMA_VERSION: u32 = 1` (`kernel-interface.md` §3.1). It is recorded in the first event of every log, `log_opened` (§2.1), together with `STATE_SCHEMA_VERSION`. Rules:

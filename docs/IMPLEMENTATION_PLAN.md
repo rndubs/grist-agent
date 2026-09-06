@@ -161,16 +161,16 @@ Per D20. Agents implement against signatures, not prose. Each spec is reviewed b
 - [ ] Tool registry: the loop can only invoke tools registered at construction (enforcement level 1 of §6)
 - [ ] Loop tests with a fake provider and fake tools: plain turn, tool call turn, multi-tool turn, task started then suspend, task completion injected while running, cancellation mid-tool, retry exhaustion, spill
 
-### P1.3 — Event log and checkpoints — `not started`
+### P1.3 — Event log and checkpoints — `in progress` (log, redactor, checkpoints, restore, and the log-level recovery data path landed with tests; the kernel-level suspend/resume and crash-recovery tests land with P1.2)
 
-- [ ] Append-only JSONL writer with the D3 envelope; one file per session; never rewritten
-- [ ] Redactor in the log writer: known secret values and common token patterns scrubbed before any payload is written (D10)
-- [ ] Checkpoint = event carrying the state hash plus enough to restore `State`
-- [ ] `restore(checkpoint_hash) -> State`
+- [x] Append-only JSONL writer with the D3 envelope; one file per session; never rewritten
+- [x] Redactor in the log writer: known secret values and common token patterns scrubbed before any payload is written (D10)
+- [x] Checkpoint = event carrying the state hash plus enough to restore `State`
+- [x] `restore(checkpoint_hash) -> State`
 - [ ] Crash recovery: on start with an existing log, restore the last checkpoint and discard later events (D15)
 - [ ] Suspend persists state and releases the process; resume restores from the latest checkpoint and continues
 - [ ] Test: run → suspend → resume produces the same payload sequence as an uninterrupted run
-- [ ] Test: a secret value placed in a tool result never appears in the log file
+- [x] Test: a secret value placed in a tool result never appears in the log file (`crates/kernel/tests/log_file.rs::d10_registered_secret_in_a_tool_result_never_reaches_the_file`; pattern corpus in `redact_corpus.rs`)
 
 ### P1.4 — Record/replay — `not started`
 
@@ -593,3 +593,4 @@ From §15 of the dev plan.
 | 2026-09-06 | P1.0 specs approved at v0.1; ADR-0001 and ADR-0003 accepted. P1.1 core types landed in `crates/kernel` (in-crate RFC 8785 canonicalizer with `ryu-js`; `serde_json` `float_roundtrip`; `proptest` dev-dependency). Spec clarifications marked **[clarified in P1.1]**: `Net` port rule and host normalization in `narrower_than`; the sandbox envelope excludes `secret:` atoms from `caps`. |
 | 2026-09-06 | P1.5 `providers` landed: one OpenAI-compatible SSE client with `Quirks` from the model profile; 41 unit tests over fake vLLM/LiteLLM/llama.cpp/Hermes shapes; stand-in integration tests behind `standin-integration`, wired into the opt-in CI job. Clarifications recorded in `docs/specs/kernel-interface.md` §3.8 as **[clarified in P1.5]**. |
 | 2026-09-06 | P1.6 `host` landed: `NativeHost` (policy-checked filesystem with symlink resolution, scrubbed-env spawn with SIGTERM→SIGKILL, allowlisted network via reqwest, secrets as handles registered with the redactor on resolve), `AskUserTool` + prompters, `remote-client` stub, endpoint-URL helper; 50 tests. Clarifications recorded in `kernel-interface.md` §3.9 as **[clarified in P1.6]**. |
+| 2026-09-06 | P1.3 log landed: `FileEventLog` (JSONL, fsync on checkpoints, torn-tail tolerance, seq/session/schema validation), one writer path with the writer-side redaction pass for both logs, restore with hash verification and migrations, log-level recovery tests, the §4.4 redaction corpus and the D10 acceptance test (52 tests). Kernel-level suspend/resume and recovery tests follow P1.2. Clarifications recorded in `event-schema.md` §1 as **[clarified in P1.3]**. |
