@@ -1,0 +1,39 @@
+schema_version = 1
+
+# In-house tools are placeholders (D9). CI installs the mock solver at these
+# exact paths (P0.5). Real paths land in the same PR as the tool interfaces.
+[install]
+mesher = "/opt/inhouse/mesher"
+solver = "/opt/inhouse/solver"
+post = "/opt/inhouse/post"
+
+# D6 / D9: an in-house HPC tool is granted as its install tree read-only,
+# the Slurm submit path, and the working directory read-write.
+
+[bundles.meshing]
+description = "Generate and inspect meshes with the in-house mesher via Slurm."
+atoms = [
+  "fs.ro:${install:mesher}",
+  "proc:sbatch",
+  "proc:squeue",
+  "proc:scancel",
+  "fs.rw:${workdir}",
+]
+
+[bundles.solver]
+description = "Set up, submit, and monitor in-house solver runs via Slurm."
+atoms = [
+  "fs.ro:${install:solver}",
+  "proc:sbatch",
+  "proc:squeue",
+  "proc:scancel",
+  "fs.rw:${workdir}",
+]
+
+[bundles.post]
+description = "Post-process results with the in-house post tool; visualization to PNG."
+atoms = [
+  "fs.ro:${install:post}",
+  "proc:sbatch",
+  "fs.rw:${workdir}",
+]

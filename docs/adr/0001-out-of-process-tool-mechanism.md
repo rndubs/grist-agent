@@ -1,6 +1,6 @@
 # ADR-0001: Out-of-process tool mechanism
 
-- **Status:** proposed
+- **Status:** accepted (2026-09-06)
 - **Date:** 2026-09-06
 - **Milestone:** P0.3 (spike) / P0.4 (decision) — see `docs/IMPLEMENTATION_PLAN.md`
 

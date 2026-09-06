@@ -1,6 +1,6 @@
 # ADR-0003: Provider client shape — one OpenAI-compatible client with quirk flags
 
-- **Status:** proposed
+- **Status:** accepted (2026-09-06)
 - **Date:** 2026-09-06
 - **Milestone:** P0.2 / P0.4 (see `docs/IMPLEMENTATION_PLAN.md`); constrains P1.5
 

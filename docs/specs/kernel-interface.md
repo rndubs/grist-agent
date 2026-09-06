@@ -1,6 +1,6 @@
 # Kernel interface specification
 
-- **Status:** draft, awaiting human review (P1.0 🧑)
+- **Status:** approved at v0.1 (2026-09-06); implementation clarifications are marked **[clarified in P1.x]**
 - **Version:** 0.1
 - **Date:** 2026-09-06
 - **Milestone:** P1.0 (D20). Implemented by P1.1 (types), P1.2 (loop), P1.3 (event log, checkpoints), P1.4 (record/replay).
@@ -30,7 +30,7 @@ Shared with `profile-schema.md`; both specs use these verbatim.
 - Serialization via `serde` + `serde_json`. Every type that can appear in `State` or in an event payload derives `Serialize, Deserialize, Clone, Debug, PartialEq` and uses `#[serde(rename_all = "snake_case")]` on enums. Enum tagging is stated per type.
 - Hash strings are `b3:<64 lowercase hex>` (D3). Canonicalization is RFC 8785 (JCS); see `event-schema.md` §3.
 - Time on the wire is an RFC 3339 UTC string with millisecond precision, `2026-09-06T12:34:56.789Z`. `Duration` fields serialize as integer seconds unless stated (`_secs` suffix on the wire) or milliseconds (`_ms` suffix).
-- Third-party dependencies the kernel MAY take: `tokio`, `tokio-util` (`CancellationToken`), `serde`, `serde_json`, `thiserror`, `async-trait`, `blake3`, `futures-core` (`Stream`), `regex` (redactor), and one JCS canonicalizer chosen by P1.1 (`serde_jcs` or equivalent). Nothing else without a note in the P1.1 PR.
+- Third-party dependencies the kernel MAY take: `tokio`, `tokio-util` (`CancellationToken`), `serde`, `serde_json`, `thiserror`, `async-trait`, `blake3`, `futures-core` (`Stream`), `regex` (redactor), and one JCS canonicalizer chosen by P1.1 (`serde_jcs` or equivalent). Nothing else without a note in the P1.1 PR. **[clarified in P1.1]** P1.1 chose an in-crate canonicalizer over `serde_json::Value` with `ryu-js` for ECMAScript number formatting (`event-schema.md` §3.8 test vectors pass), `serde_json` with the `float_roundtrip` feature (its default parser is not correctly rounded, which the RFC 8785 vectors expose), and `proptest` as a dev-dependency for the `Capability` property tests.
 
 ---
 
@@ -144,7 +144,10 @@ impl Capability {
     ///
     /// - `Fs`: `self.path` equals or is under `other.path` component-wise (after normalization,
     ///   no `..`), AND `self.mode <= other.mode` where `Ro <= Ro`, `Ro <= Rw`, `Rw <= Rw`.
-    /// - `Net`: `Hosts(a) <= Hosts(b)` iff `a ⊆ b`; anything `<= Any`; `Any <= Any` only.
+    /// - `Net`: `Hosts(a) <= Hosts(b)` iff every host of `a` is covered by a host of `b` (equal, or
+    ///   `a`'s host carries a port and `b`'s is the same host without one, per `profile-schema.md`
+    ///   §11.4); anything `<= Any`; `Any <= Any` only. Normalization drops a `host:port` whose bare
+    ///   `host` is also listed, so the order is antisymmetric up to normalization. **[clarified in P1.1]**
     /// - `Proc`, `Tool`, `Spawn`, `Secret`: exact name equality.
     pub fn narrower_than(&self, other: &Capability) -> bool;
 
@@ -464,6 +467,11 @@ pub enum ToolResult {
     Value(Value),
     Blocks(Vec<ContentBlock>),
     Task(TaskHandle),
+    /// **[clarified in P1.4]** A complete, already-normalized output served by `ReplayTool`. The kernel
+    /// copies it verbatim (no normalization, no spill; `tool_result.spill` is rebuilt from the recorded
+    /// `Spilled` content) so `origin`, `is_error`, `spilled`, `artifact_handles`, and `task` reproduce
+    /// the recorded `tool_result` byte for byte. Live tools never return it.
+    Replayed(ToolOutput),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -566,6 +574,11 @@ pub struct ToolOutput {
     pub task: Option<TaskHandle>,
     /// How the output was produced; copied verbatim on replay.
     pub origin: ToolOutputOrigin,
+    /// **[clarified in P1.4]** `true` iff the tool registered an in-process completion future for
+    /// `task`; set by the kernel after `invoke` so `after_tool` hooks (the `Recorder`) see the value
+    /// `task_started.in_process_waker` will carry, and the replay tool re-registers a stand-in waker.
+    #[serde(default)]
+    pub in_process_waker: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -819,6 +832,8 @@ pub trait Provider: Send + Sync {
 
 Provider clients are constructed by the launcher with an `Arc<dyn SecretResolver>` (§3.9); the kernel never resolves a secret (D10).
 
+**[clarified in P1.5]** Decisions the `providers` crate made where this spec and ADR-0003 were silent: `stream_options.include_usage` is always sent and `supports_stream_usage` is informational; a stream that ends without `[DONE]` is accepted iff a `finish_reason` was seen, else `InvalidResponse`; native tool calls with `finish_reason: stop` still yield `StopReason::ToolUse`; `tool_choice` is never sent unless `params.extra` sets it; a missing image artifact is a non-retryable `Client{status: 0}`; `Thinking` blocks are replayed to the endpoint under the field `reasoning_field` names (with `thinking_blocks` when a signature exists) and dropped for `none`/`inline_think`; `raw_response_hash` covers the SSE data payloads joined with `\n`, `[DONE]` excluded; a mid-stream `{"error": …}` chunk is `Server{status: 200}`.
+
 ### 3.9 `Host`, secrets, `ask_user`
 
 ```rust
@@ -956,6 +971,12 @@ pub trait Host: Send + Sync {
     async fn ask_user(&self, req: AskUserRequest) -> Result<UserAnswer, HostError>;
 }
 
+/// **[clarified in P1.6]** `host::native` enforces the filesystem policy two-sidedly: both the lexical
+/// normalized path and its symlink-resolved form must pass `FsPolicy::check` (mount paths are resolved
+/// the same way), so a link that points into a mount from outside, or out of a mount from inside, is
+/// denied; relative paths and `..` are `PathDenied`; `remove` acts on the link, not its target. The
+/// program allowlist matches the program string or its basename. `NetDenied` names `host` or `host:port`.
+/// `ChildProcess::wait` counts the timeout from spawn and caches the output for a second call.
 /// PROVIDER-ONLY (D10). Not a supertrait of `Host` on purpose: a `&dyn Host` (what tools and hooks
 /// hold) has no path to a secret value. The launcher hands `Arc<dyn SecretResolver>` to provider
 /// clients only. The `host` crate's native type implements both traits.
@@ -1146,8 +1167,10 @@ pub const SECRET_LIKE_ENV: &[&str] = &["KEY", "TOKEN", "SECRET", "PASSWORD", "PA
 /// of a `Stateless`/`Session` tool is `PolicyError::SecretInSandbox`).
 ///
 /// `derive_policy(caps, grants)` is `derive_policy_with(caps, grants, &SandboxLimits::default())`.
-/// The session **envelope** is `derive_policy_with(grants, grants, limits)`; its hash is
-/// `State.sandbox_policy_hash`. Per-tool policies are by construction narrower than the envelope.
+/// The session **envelope** is `derive_policy_with(grants_minus_secret_atoms, grants, limits)`; its hash is
+/// `State.sandbox_policy_hash`. `secret:` atoms never affect a sandbox, and passing them as `caps` would
+/// trip `SecretInSandbox`, so the kernel filters them from the envelope's `caps` (not from `grants`).
+/// **[clarified in P1.1]** Per-tool policies are by construction narrower than the envelope.
 /// `profiles` and `sandbox` call these; `sandbox` MAY re-export them as `sandbox::derive_policy`.
 pub fn derive_policy(caps: &[Capability], grants: &[Capability]) -> Result<SandboxPolicy, PolicyError>;
 pub fn derive_policy_with(caps: &[Capability], grants: &[Capability], limits: &SandboxLimits) -> Result<SandboxPolicy, PolicyError>;
@@ -1210,6 +1233,8 @@ pub enum SandboxError {
 ```
 
 The `None` backend (D14) is implemented in the `sandbox` crate under the `dev-sandbox-none` feature, reports `name() == "none"`, runs commands directly via `Host::spawn` with the scrubbed env, and the kernel logs `warning{class: "sandbox_backend_none"}` at every session start and resume when it sees that name. A release build of the `sandbox` crate MUST NOT contain it (feature-gated, and a CI job asserts the symbol is absent from a default build).
+
+**[clarified in P1.7]** The `sandbox` crate's session launcher spawns the `bwrap`/direct process with `tokio::process` rather than `Host::spawn`, because JSON-RPC needs piped stdio and `ChildProcess` exposes no pipes; it uses the identical argv and scrubbed environment. `policy_to_args` is fallible (a secret-like allowlisted name is refused). `run_script` binds its child process to the registered task future (Task scope, own token and drop guard), not to the invocation token, so `cancel(Turn)` leaves open tasks untouched per §7.1; it runs `bash <path> <args>` under `proc:bash`. `HOME=/tmp` always wins; a tool's explicit `cmd.env` passes through unscrubbed. The program check accepts a verbatim or basename match. `RunScriptTool` and `base_tools` take the `SandboxBackend` at construction since the task future must be `'static`.
 
 ### 3.13 Cancellation
 
@@ -1635,6 +1660,16 @@ impl ReplayDriver {
     pub async fn drive(&self, kernel: &mut Kernel) -> Result<RunStop, ReplayError>;
 }
 
+/// **[clarified in P1.4]** `Recorder` learns `inputs` by subscribing to the kernel's event broadcast
+/// (`Recorder::attach(&handle)` right after `create`/`open`); model and tool entries come from the hooks.
+/// `Cassette::from_log` skips unregistered calls and turn-cancel synthetic results (they bypass
+/// `after_tool`) and, per `event-schema.md` §5.1, a dangling `model_request` contributes nothing.
+/// `ReplayTool` keys lookups on the checkpoint hash the `ReplayDriver` publishes through a
+/// `CheckpointTracker` before each `run_turn`; standalone it falls back to a unique `request_hash`.
+/// `UserAnswer` inputs need no delivery (the `ask_user` result is in `cassette.tools`). Replayed
+/// `TaskUpdate.source` is `{kind: "replay", trust_tier: null, detail: null}`. The replay chain must equal
+/// the recorded chain (including a `Recorder`). Turn-scope cancellation is timing-dependent and is
+/// recorded but not replayable. A mid-turn compaction refreshes `trace.checkpoint_hash` (bug fixed in P1.4).
 /// `diff-logs` (D16): compares two logs' effective `(kind, payload)` sequences after stripping the
 /// volatile fields listed in `event-schema.md` §5.3. Also exposed as `kernel/src/bin/diff-logs.rs`.
 pub fn diff_logs(recorded: &dyn EventLogReader, replayed: &dyn EventLogReader) -> Result<DiffReport, ReplayError>;
@@ -1876,6 +1911,8 @@ Invariants the loop guarantees (tests in P1.2):
 - **State after `cancel(Turn)`:** the assistant message, if already appended (phase `before_tool` or later), stays; the in-flight tool and every not-yet-started tool call in this turn get a synthetic `ToolResult{ is_error: true, content: Json({"cancelled": true}) }` (origin `Cancelled`), so invariant 2 holds; the inbox is drained (F1); a `checkpoint{reason: cancel, session_status: idle}` is written; the session is `Idle`. Open tasks are untouched.
 - **State after `cancel(Tool)`:** that call gets the synthetic cancelled result; the turn continues with the next call.
 - `Kernel::end` cancels the session token (all children), which cancels any running turn as above before writing `session_ended`.
+
+**[clarified in P1.2]** The turn token exists for the whole `Running` span, so `cancel(Turn)` between turns cancels the next turn at its first ✂. On `cancel(Turn)`, never-started calls get a synthetic `tool_result{origin: cancelled}` but no `tool_call` (their `before_tool` never ran); the in-flight call is `cancelled.tool_use_id`, the rest `skipped_tool_use_ids`; `cancelled` precedes the synthetic results. `cancelled.signalled` is always `false` in P1: the launcher receives the tool token but no return channel reports whether SIGTERM was sent. `cancel(Task)` is queued under the `TaskUpdate` rules and logs `cancelled{scope: task, phase: idle}`; `end` logs one `cancelled` per open task. A failed turn keeps the incremented `turn` counter and restores the pre-turn snapshot otherwise; the retried turn is N+1, and wakers registered in the discarded turn are aborted. `deliver_task_update` while `Failed` stays `Failed` (§4.2) whereas `resume`/`open` with a `TaskUpdate` cause moves `Failed → Running` (§5.1). Only a terminal update resumes a `Suspended` session; a progress update is applied and checkpointed. Each tool call appends its own `Tool` message (E9 literally). `Suspension.in_process_wakers` counts open tasks with a live future in this process. `HookContext::emit` queues events that are flushed right after the hook returns. `Complete` is forwarded to the delta sink after the deltas. `Kernel::apply_queued_input()` and `Kernel::checkpoint_hash()` were added for the replay driver and tests. The kernel writes `log_opened` only when the log is empty.
 
 ### 7.2 Provider retry and turn failure (D15)
 

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | draft, awaiting human review (P1.0 🧑) |
+| **Status** | approved at v0.1 (2026-09-06); implementation clarifications are marked **[clarified in P1.x]** |
 | **Version** | 0.1 |
 | **Date** | 2026-09-06 |
 | **Decides for** | P1.8 (`profiles` crate, catalog, validator), and the profile-facing halves of P1.7, P2.1–P2.4, P2.6–P2.9, P4.4, P5.1 |
@@ -1544,6 +1544,19 @@ Property tests (P1.1): reflexive; transitive; antisymmetric up to normalization;
 - Adding an *optional* key with a default is a compatible change and does **not** bump the version (an old file still resolves identically). Renaming, removing, retyping a key, changing a default, or changing the resolved-struct shape bumps it.
 
 ---
+
+## 12a. Implementation clarifications **[clarified in P1.8]**
+
+1. `[tools].allow` is required *after merge*; layer 0 supplies `allow = []`, so an agent file omitting `[tools]` inherits the empty list rather than failing `E_MISSING_KEY`.
+2. The `env_allow` secret-name check uses the kernel's `SECRET_LIKE_ENV` (which includes `AUTH`, absent from the §3.9 regex), so a profile that validates never fails later in `derive_policy_with`.
+3. A text source is a string, `{ text = … }`, or `{ file = … }`; the `E_TEXT_SOURCE` message reads "exactly one of 'text' or 'file'".
+4. §9 case 14 (second form) and case 15 (second form) are exercised with base grants that satisfy the default tools, so that only the intended error fires.
+5. The loader emits the four §7.2 step-11 `ProfileLoad` events; the catalog's hash is exposed as `Resolved.catalog_hash`, not as a `profile_load{kind: catalog}` event in P1.
+6. `tool_call_parser` is validated against `Registry.parsers` (its syntax), not required in `Registry.middleware`.
+7. A project entry that names a model-slot or kernel entry fails as `E_PRIORITY_RANGE at agent.toml:middleware[i].name`.
+8. Diagnostics without a file (runtime overrides) display as `<code> at <toml_path>: <message>`.
+9. A placeholder not at the start of the string is `E_MALFORMED_ATOM` in atoms and `E_PATH_NOT_ABSOLUTE` in path fields; placeholder names are checked per file (step 2), `${install:<tool>}` keys at expansion (step 7).
+10. `notebook.max_tokens` truncation, sub-agent definition frontmatter parsing, and `ToolDecl.kind` checks are P2 concerns and are carried but not applied.
 
 ## 13. Open questions for the human reviewer
 

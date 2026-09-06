@@ -1,0 +1,7 @@
+schema_version = 1
+
+[[agents]]
+name = "default"
+description = "General-purpose coding and scripting agent: read, write, edit, bash, run_script, python."
+model_profile = "models/stand-in.toml"
+agent_profile = "agents/default.toml"

@@ -1,0 +1,32 @@
+schema_version = 1
+
+[model]
+id = "stand-in/default"
+endpoint = "litellm-ci"
+context_length = 32768
+tool_format = "native"
+temperature = 0.0
+max_output_tokens = 2048
+
+[model.thinking]
+enabled = false
+budget_tokens = 0
+
+[model.quirks]
+reasoning_field = "none"
+supports_structured_output = false
+supports_stream_usage = true
+strict_tool_schema = false
+auth = "bearer:LITELLM_CI_API_KEY"
+
+[prompt]
+text = """You are a coding and scripting assistant working inside a sandboxed checkout.
+Use the tools. Do not narrate tool calls you could make. Keep answers short.
+Long-running commands return a task id; you will be told when they finish."""
+
+[tool_descriptions]
+bash = "Run one shell command in a fresh sandbox. Shell state does not persist between calls; the filesystem does."
+
+[compaction]
+trigger_at = 0.80
+target = 0.45

@@ -6,10 +6,36 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish.workspace = true
-description = "Inner bwrap policy derivation from capability declarations; SandboxBackend implementations and tool launchers."
+description = "SandboxBackend implementations (bwrap, dev-only none) and tool launchers over the kernel-derived SandboxPolicy; the six base tools."
 
 [dependencies]
 kernel.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+async-trait.workspace = true
+futures-core.workspace = true
+futures-util.workspace = true
+nix.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[features]
+# D14: the `None` backend runs tools WITHOUT isolation; development builds only. A release
+# build of this crate MUST NOT contain it.
+dev-sandbox-none = []
+
+# CI assertion for D14 (§3.12 of the kernel interface): this example references
+# `sandbox::NoneBackend` and can only be built with the feature. The step
+#   cargo check -p sandbox --example none_backend_symbol
+# MUST fail (cargo refuses a target whose `required-features` are missing) and
+#   cargo check -p sandbox --example none_backend_symbol --features dev-sandbox-none
+# MUST pass. See `examples/none_backend_symbol.rs` for the reasoning.
+[[example]]
+name = "none_backend_symbol"
+required-features = ["dev-sandbox-none"]
 
 [lints]
 workspace = true

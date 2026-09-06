@@ -33,7 +33,7 @@ This file is the single source of truth for progress. Update it in the same PR a
 | Phase | Name | Status | Milestones done | Exit criteria met |
 |---|---|---|---|---|
 | P0 | Spikes (de-risk before design freeze) | in progress | 2 / 6 | no |
-| P1 | Kernel + local daemon | in progress (P1.0 drafts only) | 0 / 10 | no |
+| P1 | Kernel + local daemon | in progress | 8 / 10 done (P1.0–P1.6, P1.8); P1.7 landed, bwrap tests need a host; P1.9 not started | 4 / 5 (soft freeze is a 🧑 decision at exit) |
 | P2 | Extensions and specialization | not started | 0 / 9 | no |
 | P3 | Provenance and orchestration | not started | 0 / 7 | no |
 | P4 | Evolve loop | not started | 0 / 7 | no |
@@ -94,12 +94,12 @@ Scope narrowed by D8: middleware and first-party tools are compiled Rust; this s
 - [x] Score both against: authorability by the agent at runtime without a recompile, sandbox compatibility under P0.1's inner bwrap, state persistence across calls, latency per call, packaging and distribution
 - [x] Write-up: `docs/spikes/extension-mechanism.md`
 
-### P0.4 — Decisions and design freeze — `in progress` 🧑 (ADR-0001 and ADR-0003 drafted as `proposed`; acceptance is the human's)
+### P0.4 — Decisions and design freeze — `in progress` 🧑 (ADR-0001 and ADR-0003 accepted and the dev plan bumped to v0.2 on 2026-09-06; ADR-0002 waits on the P0.1 login-node run; the P1 freeze declaration is the human's)
 
-- [ ] **ADR-0001** Out-of-process tool mechanism (from P0.3), recording the D8 tier split — drafted (`proposed`), 🧑 accept
+- [x] **ADR-0001** Out-of-process tool mechanism (from P0.3), recording the D8 tier split — accepted 2026-09-06
 - [ ] **ADR-0002** Sandbox stack on the HPC login node and fallback (from P0.1)
-- [ ] **ADR-0003** Provider client shape: one OpenAI-compatible client with quirk flags (from P0.2) — drafted (`proposed`), 🧑 accept
-- [ ] Update the dev plan (§3, §4, §8, §11) with anything the spikes changed and with D1–D20; bump to v0.2
+- [x] **ADR-0003** Provider client shape: one OpenAI-compatible client with quirk flags (from P0.2) — accepted 2026-09-06
+- [x] Update the dev plan (§3, §4, §8, §11) with anything the spikes changed and with D1–D20; bump to v0.2 (2026-09-06; §5, §6, §13–§15 refreshed too; the specs are named as the normative surface)
 - [ ] 🧑 Freeze the crate list and the `kernel` public surface for P1
 
 ### P0.5 — CI stand-in stack — `in progress` (fake Slurm and mock solver tested locally; container pieces authored and wired into the `standin` CI job, which must go green once before they are ticked)
@@ -127,101 +127,101 @@ Per D18 and D9. Everything agents need to run integration tests without GPUs, cl
 
 **Purpose:** the core (§4) plus enough around it to run a real session locally and replay it. Soft freeze of `kernel` at exit (D12).
 
-### P1.0 — Interface specs — `in progress` 🧑 (all three drafted at v0.1 and cross-reconciled; awaiting human review)
+### P1.0 — Interface specs — `done` (all three approved at v0.1 on 2026-09-06)
 
 Per D20. Agents implement against signatures, not prose. Each spec is reviewed by a human before P1.1 starts.
 
 - [x] (draft v0.1) `docs/specs/kernel-interface.md`: Rust signatures for `State`, `Tool`, `ToolKind`, `ToolResult`, `Task`, `Capability`, `Middleware`, `Provider`, `Host`, `ArtifactStore`, `Memory`, `SandboxBackend`; the task state machine (D1); the session state machine (D2); cancellation, retry, and crash-recovery semantics (D15)
 - [x] (draft v0.1) `docs/specs/event-schema.md`: envelope, every `Event` kind and its payload fields, what each hash covers, the volatile-field list excluded from the state hash (D3, D13)
 - [x] (draft v0.1) `docs/specs/profile-schema.md`: TOML schema for model profile, agent profile, project overrides, bundles file; merge rules; middleware priority slots; system prompt block order; validator rejection cases; capability atoms and the narrower-than relation (D6, D7)
-- [ ] 🧑 All three reviewed and approved
+- [x] 🧑 All three reviewed and approved (2026-09-06, v0.1 as on `main`)
 
-### P1.1 — Core types — `not started`
+### P1.1 — Core types — `done`
 
-- [ ] `State` (serde) with `schema_version` from the first commit; fields: messages, `pending_tasks`, `session_status` (D2), active profile hashes, memory pointer, notebook path, sandbox policy hash, sandbox backend name (D14)
-- [ ] `State` migration hook: loading an older `schema_version` runs a registered migration or fails loudly
-- [ ] Content blocks: text, thinking, tool use, tool result, and `Image{artifact_handle, mime}` (D15)
-- [ ] `Tool` trait: `name`, `description`, `schema`, `kind: Stateless | Session` (D5), `capabilities: Vec<Capability>`, async `invoke() -> Result<ToolResult>` (D4)
-- [ ] `ToolResult = Value | Task { id, status, eta, check_hint }`; `Task` status enum per D1
-- [ ] `Capability` atoms and `narrower_than` per D6, with property tests (reflexive, transitive, path-prefix and allowlist cases)
-- [ ] `Middleware` trait (async): `before_model`, `after_model`, `before_tool`, `after_tool`, `on_compact`, `on_resume`
-- [ ] `ArtifactStore` and `Memory` traits with no-op implementations (D12)
-- [ ] `Event` enum covering every kind in §4.2 plus `TaskUpdate`, `Cancelled`, `ProfileLoad`; tool and model events carry the D13 fields
-- [ ] Hashing module: BLAKE3 over RFC 8785 canonical JSON, prefixed hash strings, `request_hash` and `state_hash` definitions (D3)
-- [ ] Unit tests for serde round-trips and hash stability of every core type
+- [x] `State` (serde) with `schema_version` from the first commit; fields: messages, `pending_tasks`, `session_status` (D2), active profile hashes, memory pointer, notebook path, sandbox policy hash, sandbox backend name (D14)
+- [x] `State` migration hook: loading an older `schema_version` runs a registered migration or fails loudly
+- [x] Content blocks: text, thinking, tool use, tool result, and `Image{artifact_handle, mime}` (D15)
+- [x] `Tool` trait: `name`, `description`, `schema`, `kind: Stateless | Session` (D5), `capabilities: Vec<Capability>`, async `invoke() -> Result<ToolResult>` (D4)
+- [x] `ToolResult = Value | Task { id, status, eta, check_hint }`; `Task` status enum per D1
+- [x] `Capability` atoms and `narrower_than` per D6, with property tests (reflexive, transitive, path-prefix and allowlist cases)
+- [x] `Middleware` trait (async): `before_model`, `after_model`, `before_tool`, `after_tool`, `on_compact`, `on_resume`
+- [x] `ArtifactStore` and `Memory` traits with no-op implementations (D12)
+- [x] `Event` enum covering every kind in §4.2 plus `TaskUpdate`, `Cancelled`, `ProfileLoad`; tool and model events carry the D13 fields
+- [x] Hashing module: BLAKE3 over RFC 8785 canonical JSON, prefixed hash strings, `request_hash` and `state_hash` definitions (D3)
+- [x] Unit tests for serde round-trips and hash stability of every core type (`crates/kernel/tests/core_types.rs`; RFC 8785 vectors in `hash`; `Capability` property tests in `capability`)
 
-### P1.2 — The loop — `not started`
+### P1.2 — The loop — `done`
 
-- [ ] Implement the §4.1 loop with async hooks in the stated order, checkpoint after each turn, and the D1 suspension rule
-- [ ] Session state machine per D2, including queued user input at turn boundaries
-- [ ] Cancellation token checked between hooks; running tool receives SIGTERM via the sandbox launcher; `Cancelled` event logged (D15)
-- [ ] Provider retry with backoff on rate limits and server errors; on exhaustion the turn fails and the session enters `failed` with checkpoint intact (D15)
-- [ ] Result spill in the kernel: results over the profile's cap go to `ArtifactStore` and are replaced by `{ handle, head, tail }` (D12)
-- [ ] Ordered middleware chain; the *resolved* chain is written to the event log at run start
-- [ ] Tool registry: the loop can only invoke tools registered at construction (enforcement level 1 of §6)
-- [ ] Loop tests with a fake provider and fake tools: plain turn, tool call turn, multi-tool turn, task started then suspend, task completion injected while running, cancellation mid-tool, retry exhaustion, spill
+- [x] Implement the §4.1 loop with async hooks in the stated order, checkpoint after each turn, and the D1 suspension rule
+- [x] Session state machine per D2, including queued user input at turn boundaries
+- [x] Cancellation token checked between hooks; running tool receives SIGTERM via the sandbox launcher; `Cancelled` event logged (D15)
+- [x] Provider retry with backoff on rate limits and server errors; on exhaustion the turn fails and the session enters `failed` with checkpoint intact (D15)
+- [x] Result spill in the kernel: results over the profile's cap go to `ArtifactStore` and are replaced by `{ handle, head, tail }` (D12)
+- [x] Ordered middleware chain; the *resolved* chain is written to the event log at run start
+- [x] Tool registry: the loop can only invoke tools registered at construction (enforcement level 1 of §6)
+- [x] Loop tests with a fake provider and fake tools: plain turn, tool call turn, multi-tool turn, task started then suspend, task completion injected while running, cancellation mid-tool, retry exhaustion, spill (`crates/kernel/tests/loop_{turns,tasks,cancel,retry,spill,middleware,open,registry}.rs`, 60 tests; the five §6 invariants each have an assertion helper)
 
-### P1.3 — Event log and checkpoints — `not started`
+### P1.3 — Event log and checkpoints — `done`
 
-- [ ] Append-only JSONL writer with the D3 envelope; one file per session; never rewritten
-- [ ] Redactor in the log writer: known secret values and common token patterns scrubbed before any payload is written (D10)
-- [ ] Checkpoint = event carrying the state hash plus enough to restore `State`
-- [ ] `restore(checkpoint_hash) -> State`
-- [ ] Crash recovery: on start with an existing log, restore the last checkpoint and discard later events (D15)
-- [ ] Suspend persists state and releases the process; resume restores from the latest checkpoint and continues
-- [ ] Test: run → suspend → resume produces the same payload sequence as an uninterrupted run
-- [ ] Test: a secret value placed in a tool result never appears in the log file
+- [x] Append-only JSONL writer with the D3 envelope; one file per session; never rewritten
+- [x] Redactor in the log writer: known secret values and common token patterns scrubbed before any payload is written (D10)
+- [x] Checkpoint = event carrying the state hash plus enough to restore `State`
+- [x] `restore(checkpoint_hash) -> State`
+- [x] Crash recovery: on start with an existing log, restore the last checkpoint and discard later events (D15) (`Kernel::open`; `crates/kernel/tests/integration_log.rs::crash_mid_turn_recovers_from_the_last_checkpoint_and_discards_the_tail` on a real file)
+- [x] Suspend persists state and releases the process; resume restores from the latest checkpoint and continues (`Kernel::open` with a `TaskUpdate` cause on the reopened file)
+- [x] Test: run → suspend → resume produces the same payload sequence as an uninterrupted run (`integration_log.rs::run_suspend_resume_in_a_new_process_matches_an_uninterrupted_run`: identical final `state_hash`, messages, tasks, and hashed-event projection)
+- [x] Test: a secret value placed in a tool result never appears in the log file (`crates/kernel/tests/log_file.rs::d10_registered_secret_in_a_tool_result_never_reaches_the_file`; pattern corpus in `redact_corpus.rs`)
 
-### P1.4 — Record/replay — `not started`
+### P1.4 — Record/replay — `done`
 
-- [ ] Recorder middleware captures model responses and tool results keyed by `(checkpoint_hash, request_hash)`
-- [ ] Replay provider and replay tool-invoker serve recorded responses; a cache miss is an error, not a live call
-- [ ] `diff-logs` command: strips envelope fields and asserts byte-identical payloads (D16)
-- [ ] Test: a recorded session replays in under a second with zero network access and `diff-logs` passes
+- [x] Recorder middleware captures model responses and tool results keyed by `(checkpoint_hash, request_hash)`
+- [x] Replay provider and replay tool-invoker serve recorded responses; a cache miss is an error, not a live call
+- [x] `diff-logs` command: strips envelope fields and asserts byte-identical payloads (D16)
+- [x] Test: a recorded session replays in under a second with zero network access and `diff-logs` passes (`crates/kernel/tests/replay_sessions.rs::a_recorded_session_replays_in_under_a_second`: 13 ms debug; `ReplayProvider` holds no client; 23 record/replay scenarios assert `Recorder::cassette() == Cassette::from_log`; `replay_diff.rs` covers every §5.3 volatile field and the `diff-logs` binary)
 
-### P1.5 — `providers` crate — `not started`
+### P1.5 — `providers` crate — `done` (stand-in integration tests wired into the opt-in `standin` CI job; first live run needs the `ci:standin` label on the PR)
 
 Depends on P0.2 / ADR-0003.
 
-- [ ] One OpenAI-compatible client with SSE streaming
-- [ ] Per-endpoint quirk flags from the P0.2 table (tool format, reasoning field name, structured-output support, auth mode)
-- [ ] Reasoning/thinking mapped into a `Thinking` content block that survives serialization
-- [ ] Image content blocks encoded from artifact bytes at request time (D15)
-- [ ] Secrets resolved from Host handles at request time only (D10)
-- [ ] Token usage from every response recorded into the model call event (D13)
-- [ ] Integration tests against the P0.5 stand-in in CI; vLLM and LiteLLM tests behind the environment gate
+- [x] One OpenAI-compatible client with SSE streaming
+- [x] Per-endpoint quirk flags from the P0.2 table (tool format, reasoning field name, structured-output support, auth mode)
+- [x] Reasoning/thinking mapped into a `Thinking` content block that survives serialization
+- [x] Image content blocks encoded from artifact bytes at request time (D15)
+- [x] Secrets resolved from Host handles at request time only (D10)
+- [x] Token usage from every response recorded into the model call event (D13)
+- [x] Integration tests against the P0.5 stand-in in CI (`crates/providers/tests/standin.rs`, feature `standin-integration`, run by the opt-in `standin` job with `GRIST_REQUIRE_STANDIN=1`); vLLM and LiteLLM tests behind the environment gate (skip when unset)
 
-### P1.6 — `host` crate — `not started`
+### P1.6 — `host` crate — `done`
 
-- [ ] `Host` trait: filesystem, process spawn, network, secrets-as-handles (D10), `ask_user` (D17)
-- [ ] `host::native` implementation
-- [ ] Filesystem operations take a `Policy` and enforce path and mode checks in process; this is how `read`, `write`, `edit` are sandboxed (D5)
-- [ ] `host::remote-client` left as a stub with a documented interface (filled in P3)
-- [ ] Kernel and tools take `&dyn Host`; nothing in `kernel` touches `std::fs` or `std::process` directly
+- [x] `Host` trait: filesystem, process spawn, network, secrets-as-handles (D10), `ask_user` (D17)
+- [x] `host::native` implementation (`NativeHost`, also the `SecretResolver`; `AskUserTool`; `ChannelPrompter`/`NoUserPrompter`)
+- [x] Filesystem operations take a `Policy` and enforce path and mode checks in process; this is how `read`, `write`, `edit` are sandboxed (D5)
+- [x] `host::remote-client` left as a stub with a documented interface (filled in P3)
+- [x] Kernel and tools take `&dyn Host`; nothing in `kernel` touches `std::fs` or `std::process` directly (the kernel's only file I/O is the event log writer; `crates/kernel/tests/no_std_fs_process.rs` asserts it)
 
-### P1.7 — `sandbox` crate and base tools — `not started`
+### P1.7 — `sandbox` crate and base tools — `in progress` 🧑 (everything landed and tested with the `None` backend; the five `bwrap` tests skip until run on a host with `bwrap` — the login node run that also settles ADR-0002)
 
 Depends on P0.1 / ADR-0002.
 
-- [ ] `SandboxBackend` trait with `Bwrap` and `None` implementations; `None` compiles only under a `dev-sandbox-none` feature and is logged in every run (D14)
-- [ ] Inner policy type: mounts (RW/RO), tmpfs scratch, network on/off + allowlist, timeout, scrubbed environment (D10)
-- [ ] `derive_policy(tool.capabilities, profile.grants) -> Policy`, purely mechanical, no escape hatch
-- [ ] Stateless launcher: one bwrap per call. Session launcher: one bwrap process per session, calls as RPC (D5)
-- [ ] Base tools: `read`, `write`, `edit` (in-process via Host policy checks), `bash` (Stateless, bwrap)
-- [ ] `run_script` tool returning a `Task`, plus the in-kernel process-exit waker that completes it (D1)
-- [ ] Python REPL as a `Session` tool per ADR-0001, inside the inner sandbox
-- [ ] Tests: `fs.ro` tool cannot write; tool without `net` cannot open a socket; timeout enforced; tool env contains no API key; `run_script` suspend/resume cycle completes without polling in context
+- [x] `SandboxBackend` trait with `Bwrap` and `None` implementations; `None` compiles only under a `dev-sandbox-none` feature and is logged in every run (D14)
+- [x] Inner policy type: mounts (RW/RO), tmpfs scratch, network on/off + allowlist, timeout, scrubbed environment (D10)
+- [x] `derive_policy(tool.capabilities, profile.grants) -> Policy`, purely mechanical, no escape hatch
+- [x] Stateless launcher: one bwrap per call. Session launcher: one bwrap process per session, calls as RPC (D5)
+- [x] Base tools: `read`, `write`, `edit` (in-process via Host policy checks), `bash` (Stateless, bwrap)
+- [x] `run_script` tool returning a `Task`, plus the in-kernel process-exit waker that completes it (D1)
+- [x] Python REPL as a `Session` tool per ADR-0001, inside the inner sandbox
+- [x] Tests: `fs.ro` tool cannot write (`tools::write_under_a_read_only_policy_is_denied`, and `bwrap::fs_ro_mount_refuses_a_write_and_rw_allows_it` 🧑 bwrap host); tool without `net` cannot open a socket (`bwrap::network_off_cannot_open_a_socket` 🧑 bwrap host); timeout enforced (`none_backend::timeout_is_enforced_and_the_process_is_gone`, `session::per_call_timeout_kills_the_process`); tool env contains no API key (`none_backend::none_env_scrubbed`, `policy_args::env_is_scrubbed_to_the_allowlist_with_home_forced`); `run_script` future yields the exit outcome without polling (`tools::sandboxed::run_script_returns_a_task_and_the_future_yields_the_exit_outcome`); the kernel-level suspend/resume cycle completes without polling in context (`crates/orchestrator/tests/exit_criteria.rs::run_script_session_suspends_and_the_process_exit_waker_resumes_it`)
 
-### P1.8 — `profiles` crate and catalog — `not started`
+### P1.8 — `profiles` crate and catalog — `done`
 
-- [ ] TOML schemas per `docs/specs/profile-schema.md` (D7): model profile (system prompt variant, tool-description phrasings, `tool_format`, thinking/temperature defaults, context length, compaction thresholds, quirks, optional `trained_against_profile_hash`), agent profile (capability bundles, MCP servers, skills, `AGENTS.md`, sub-agent definitions, middleware entries with priority, memory module, sandbox policy, eval set pointer, `context_budget_tokens` default 40000 (D16)), project overrides
-- [ ] Bundles file mapping `meshing`, `solver`, `post`, and HPC in-house tool grants (`Fs{<install path>, ro}` + `Proc{sbatch}`) to atoms (D6, D9)
-- [ ] Resolution: `kernel defaults + model profile + agent profile + project overrides` with the D7 merge rules and priority-sorted middleware chain
-- [ ] System prompt assembly in the D7 block order
-- [ ] **Validator:** unknown keys, kernel-only keys, and capabilities exceeding grants are rejected; tests for each
-- [ ] Every loaded profile is content-hashed; hashes recorded in `State` and in a `ProfileLoad` event
-- [ ] Catalog: registry of task agents = (model profile, agent profile) pairs, addressable by name
-- [ ] One default agent (four base tools + `run_script` + Python REPL) shipped in-repo
+- [x] TOML schemas per `docs/specs/profile-schema.md` (D7): model profile (system prompt variant, tool-description phrasings, `tool_format`, thinking/temperature defaults, context length, compaction thresholds, quirks, optional `trained_against_profile_hash`), agent profile (capability bundles, MCP servers, skills, `AGENTS.md`, sub-agent definitions, middleware entries with priority, memory module, sandbox policy, eval set pointer, `context_budget_tokens` default 40000 (D16)), project overrides
+- [x] Bundles file mapping `meshing`, `solver`, `post`, and HPC in-house tool grants (`Fs{<install path>, ro}` + `Proc{sbatch}`) to atoms (D6, D9)
+- [x] Resolution: `kernel defaults + model profile + agent profile + project overrides` with the D7 merge rules and priority-sorted middleware chain
+- [x] System prompt assembly in the D7 block order
+- [x] **Validator:** unknown keys, kernel-only keys, and capabilities exceeding grants are rejected; tests for each (`crates/profiles/tests/validator.rs`: all 33 §9 cases and sub-cases, plus the four `warns_*`)
+- [x] Every loaded profile is content-hashed; hashes recorded in `State` and in a `ProfileLoad` event
+- [x] Catalog: registry of task agents = (model profile, agent profile) pairs, addressable by name
+- [x] One default agent (four base tools + `run_script` + Python REPL) shipped in-repo (`profiles/`; `tests/shipped.rs` resolves it end to end)
 
 ### P1.9 — Protocol server and first client — `not started`
 
@@ -234,14 +234,15 @@ Open question §15.2 (wire protocol) is decided here.
 - [ ] Remote use documented as an SSH-forwarded unix socket; no websocket in this phase (D11)
 - [ ] First client: either a thin Tauri shell or an ACP-compatible editor, whichever ADR-0004 makes cheaper; must run on Windows, macOS, and Linux (D14). No CLI (§13, "CLI-less")
 - [ ] Every protocol message maps to or from an `Event`; no protocol-only state
+- [ ] Launcher: `profiles::KernelInputs` → `KernelConfig` + `SessionInit` (reference shape in `crates/orchestrator/tests/launcher.rs`), backend selection by `sandbox_backend` (refuse `none` outside dev builds), endpoint URL via `host::endpoint_url_from_env`, provider from `Quirks`, model-profile `tool_descriptions` applied by wrapping the compiled tools' definitions
 
 ### Exit criteria — Phase 1
 
-- [ ] A coding session (read/edit/bash on a real repo) is recorded and replays with `diff-logs` passing and no network
-- [ ] A `run_script` session (start, suspend, process-exit waker, resume, finish) is recorded and replays the same way
-- [ ] Session reaches `failed` on provider exhaustion and resumes from its checkpoint
-- [ ] `kernel` soft-frozen: changes now require an ADR (D12)
-- [ ] `State.schema_version` migrations exercised by at least one test
+- [x] A coding session (read/edit/bash on a real repo) is recorded and replays with `diff-logs` passing and no network (`crates/orchestrator/tests/exit_criteria.rs::coding_session_replays_with_diff_logs_passing_and_no_network`: real checkout, `NativeHost`, `None` backend; replay never calls the provider, leaves the checkout untouched, and `diff_logs` is identical)
+- [x] A `run_script` session (start, suspend, process-exit waker, resume, finish) is recorded and replays the same way (`exit_criteria.rs::run_script_session_replays_with_diff_logs_passing_and_no_network`)
+- [x] Session reaches `failed` on provider exhaustion and resumes from its checkpoint (`crates/orchestrator/tests/exit_criteria.rs::provider_exhaustion_fails_the_session_and_it_resumes_from_its_checkpoint`, in-process and from the file)
+- [ ] 🧑 `kernel` soft-frozen: changes now require an ADR (D12) — declared by the human at Phase 1 exit, after P1.9; the CODEOWNERS/CI check in the boundary track lands with it
+- [x] `State.schema_version` migrations exercised by at least one test (`crates/kernel/tests/core_types.rs::migration_registry_runs_registered_steps_and_fails_loudly_otherwise`, `loop_open.rs::open_migrates_an_old_checkpoint_and_logs_state_migrated`, `log_recovery.rs::an_older_schema_checkpoint_restores_through_a_registered_migration`)
 
 ---
 
@@ -519,14 +520,14 @@ Checked at every phase boundary.
 
 ### Schema versioning
 
-- [ ] `State.schema_version` (P1.1), event schema version, profile schema version, PROV schema version each bumped with a migration and a test
+- [ ] `State.schema_version` (P1.1: `MigrationRegistry` + a v0→v1 migration test in `core_types.rs`), event schema version, profile schema version, PROV schema version each bumped with a migration and a test
 
 ### Documentation
 
-- [ ] `docs/adr/` index current
-- [ ] `docs/specs/` kept in step with the code; a spec change and its implementation land in the same PR
+- [x] `docs/adr/` index current (ADR-0001 and ADR-0003 accepted; ADR-0002 and ADR-0004 pending)
+- [x] `docs/specs/` kept in step with the code; a spec change and its implementation land in the same PR (every P1.x clarification is marked **[clarified in P1.x]** in the spec that owns it)
 - [x] Each crate has a `README.md` stating its responsibility and whether the evolve loop may mutate it (§3.1 table)
-- [ ] Dev plan revised at each phase exit (v0.2 after P0, v0.3 after P1, …)
+- [ ] Dev plan revised at each phase exit (v0.2 after P0 — done; v0.3 after P1, …)
 
 ---
 
@@ -539,13 +540,13 @@ Maps §14 risks, plus two surfaced in review, to the milestones that mitigate th
 | Extension mechanism chosen wrong | D8, P0.3, P0.4 (ADR-0001), P2.1 | open |
 | bwrap won't nest in rootless Podman under the login node's 2002-uid map | P0.1, P0.4 (ADR-0002), P1.7 | open |
 | In-house tools unavailable to agents and CI | D9, P0.5 mocks, spill handler behind an interface (P2.5) | open |
-| Kernel feature creep | P0.0 (CONTRIBUTING), P1.0 specs, D12 freeze schedule, boundary track | open |
-| Profiles overriding structure | P1.8 validator (D7) | open |
-| Checkpoint schema drift | P1.1 `schema_version` + migration hook, schema versioning track | open |
-| Secrets in the archive | D10: P1.3 redactor, P1.6 handles, P1.7 scrubbed env | open |
+| Kernel feature creep | P0.0 (CONTRIBUTING), P1.0 specs, D12 freeze schedule, boundary track | open (specs and boundary tests in place; the soft freeze is declared at P1 exit) |
+| Profiles overriding structure | P1.8 validator (D7) | mitigated (kernel-only keys, layer-3 forbidden keys, and widening all rejected with tests) |
+| Checkpoint schema drift | P1.1 `schema_version` + migration hook, schema versioning track | mitigated (P1.1 hook + test); retire at P1 exit |
+| Secrets in the archive | D10: P1.3 redactor, P1.6 handles, P1.7 scrubbed env | mitigated (all three landed with tests: secret never in the file, handles never expose values, sandbox env scrubbed) |
 | Evolve loop overfits / optimizes noise | P4.2 hidden sets (D19) + baseline, P4.3 gates, P4 exit constructed rejection (D16) | open |
 | Fine-tune / harness drift | P5.1 trained-against hash + warning | open |
-| Middleware ordering bugs | P1.2 resolved chain logged per run; D7 priority slots | open |
+| Middleware ordering bugs | P1.2 resolved chain logged per run; D7 priority slots | mitigated (chain logged and same-order hooks tested in P1.2; validator ranges tested in P1.8) |
 | Workflow DSL creep | P3.6 guardrail | open |
 | Context flooding from MCP | P2.2 lazy exposure, kernel spill (D12), P2.6 compaction, P2.9 budget | open |
 | Agent writes its own pedigree | P3.1 mechanical emission, P3 exit test | open |
@@ -556,9 +557,9 @@ Maps §14 risks, plus two surfaced in review, to the milestones that mitigate th
 
 | ADR | Decision | Decided in | Status |
 |---|---|---|---|
-| ADR-0001 | Out-of-process tool mechanism (process JSON-RPC vs. WASM), recording the D8 tier split | P0.4 | proposed (drafted 2026-09-06) |
+| ADR-0001 | Out-of-process tool mechanism (process JSON-RPC vs. WASM), recording the D8 tier split | P0.4 | accepted (2026-09-06) |
 | ADR-0002 | Sandbox stack on the HPC login node and fallback | P0.4 | pending |
-| ADR-0003 | One OpenAI-compatible provider client with quirk flags | P0.4 | proposed (drafted 2026-09-06) |
+| ADR-0003 | One OpenAI-compatible provider client with quirk flags | P0.4 | accepted (2026-09-06) |
 | ADR-0004 | Wire protocol: adopt ACP, extend it, or own JSON-RPC + ACP shim | P1.9 | pending |
 | ADR-0005 | Memory module interface: how much of ALMA's search space is exposed | P2.7 | pending |
 | ADR-0006 | Provenance store at fleet scale: Postgres alone or graph layer | P3.1 | pending |
@@ -572,7 +573,7 @@ From §15 of the dev plan.
 
 | # | Question | Resolves in | Status |
 |---|---|---|---|
-| 1 | Extension mechanism | D8 narrowed it; P0.3 spike recommends process JSON-RPC; ADR-0001 drafted | proposed |
+| 1 | Extension mechanism | D8 narrowed it; P0.3 spike recommends process JSON-RPC; ADR-0001 accepted | decided |
 | 2 | Wire protocol (ACP vs. own) | P1.9 → ADR-0004; transport and auth settled by D11 | partly decided |
 | 3 | Memory module interface scope | P2.7 → ADR-0005 | open |
 | 4 | Provenance store at fleet scale | P3.1 → ADR-0006 | open |
@@ -590,3 +591,15 @@ From §15 of the dev plan.
 | 2026-09-06 | P0.0 repository foundations landed: workspace, nine stub crates, DAG, CI, toolchain pin (1.94.1, MSRV 1.94), `CONTRIBUTING.md`. |
 | 2026-09-06 | P0.3 done (process JSON-RPC recommended, ADR-0001 drafted). P0.2 client + write-up + ADR-0003 draft; real endpoints remain 🧑. P0.5 fake Slurm and mock solver tested; containers and CI job authored, pending first green run. P0.1 spike scripts ready for the login node. P1.0 specs drafted at v0.1 and reconciled, awaiting review. |
 | 2026-09-06 | Model-serving stand-in stack made opt-in in CI (label `ci:standin` / manual); fake Slurm and mock solver self-tests stay on every PR. D18 amended accordingly. |
+| 2026-09-06 | P1.0 specs approved at v0.1; ADR-0001 and ADR-0003 accepted. P1.1 core types landed in `crates/kernel` (in-crate RFC 8785 canonicalizer with `ryu-js`; `serde_json` `float_roundtrip`; `proptest` dev-dependency). Spec clarifications marked **[clarified in P1.1]**: `Net` port rule and host normalization in `narrower_than`; the sandbox envelope excludes `secret:` atoms from `caps`. |
+| 2026-09-06 | P1.5 `providers` landed: one OpenAI-compatible SSE client with `Quirks` from the model profile; 41 unit tests over fake vLLM/LiteLLM/llama.cpp/Hermes shapes; stand-in integration tests behind `standin-integration`, wired into the opt-in CI job. Clarifications recorded in `docs/specs/kernel-interface.md` §3.8 as **[clarified in P1.5]**. |
+| 2026-09-06 | P1.6 `host` landed: `NativeHost` (policy-checked filesystem with symlink resolution, scrubbed-env spawn with SIGTERM→SIGKILL, allowlisted network via reqwest, secrets as handles registered with the redactor on resolve), `AskUserTool` + prompters, `remote-client` stub, endpoint-URL helper; 50 tests. Clarifications recorded in `kernel-interface.md` §3.9 as **[clarified in P1.6]**. |
+| 2026-09-06 | P1.3 log landed: `FileEventLog` (JSONL, fsync on checkpoints, torn-tail tolerance, seq/session/schema validation), one writer path with the writer-side redaction pass for both logs, restore with hash verification and migrations, log-level recovery tests, the §4.4 redaction corpus and the D10 acceptance test (52 tests). Kernel-level suspend/resume and recovery tests follow P1.2. Clarifications recorded in `event-schema.md` §1 as **[clarified in P1.3]**. |
+| 2026-09-06 | P1.7 `sandbox` landed: `BwrapBackend` (pure `policy_to_args` against the P0.1 inner shape), `NoneBackend` behind `dev-sandbox-none` with a CI-asserted absence from default builds, `JsonRpcSession` (newline JSON-RPC 2.0, SIGTERM→SIGKILL), the six base tools incl. `run_script` (Task + in-process waker future) and the Python REPL; 57 tests, 5 need a bwrap host. Clarifications recorded in `kernel-interface.md` §3.12 as **[clarified in P1.7]**. |
+| 2026-09-06 | P1.2 loop landed in `crates/kernel/src/loop_/`: `Kernel`, `KernelHandle`, the §6 turn with every cancellation check point, the D1/D2 state machines, retry with full jitter, kernel spill, ingress redaction, chain resolution, registry enforcement, in-process waker, `open` with resume/recovery/migration; 60 loop tests. Clarifications recorded in `kernel-interface.md` §7 as **[clarified in P1.2]**. |
+| 2026-09-06 | P1.8 `profiles` landed with the in-repo `profiles/` tree (catalog, bundles, `stand-in` model, `default` agent): per-file validation with exact TOML paths, D7 merge, bundle and placeholder expansion, symbolic `resolved_profile_hash`, narrowing checks, prompt assembly, `KernelInputs` for the launcher; 63 tests. Clarifications recorded in `profile-schema.md` §13 as **[clarified in P1.8]**. |
+| 2026-09-06 | Phase 1 exit-criteria sessions added in `crates/orchestrator/tests/exit_criteria.rs` (real kernel + `NativeHost` + `None` backend + base tools + file log): coding session recorded, `run_script` suspend/waker/resume recorded, provider exhaustion → `failed` → resume proven. The `orchestrator → sandbox, host` edges are used as dev-dependencies for these tests. |
+| 2026-09-06 | P1.4 record/replay landed in `crates/kernel/src/replay/`: `Cassette` (the log is the cassette), `Recorder` at 990, `ReplayProvider`, `ReplayTool` with the driver's checkpoint tracker, `ReplayDriver`, `diff_logs` and the `diff-logs` binary; 28 tests. Two kernel-shape additions recorded in `kernel-interface.md` §3.6 as **[clarified in P1.4]**: `ToolResult::Replayed(ToolOutput)` and `ToolOutput.in_process_waker`. |
+| 2026-09-06 | Phase 1 exit criteria 1, 2, 3 and 5 met by tests in `crates/orchestrator/tests/exit_criteria.rs` and the kernel migration tests; the soft freeze (criterion 4) waits on P1.9 and the human. |
+| 2026-09-06 | Launcher-path test over the shipped `profiles/` tree (`crates/orchestrator/tests/launcher.rs`); `orchestrator → profiles` recorded as a dev edge. Risk register: secrets, middleware ordering, and profile-structure risks marked mitigated. README status refreshed. |
+| 2026-09-06 | Dev plan bumped to v0.2 (D1–D20, ADR-0001/0003, spike outcomes folded in; specs named normative). PR #3 opened with the `ci:standin` label. |
