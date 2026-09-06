@@ -10,8 +10,11 @@ in-house tools (decisions D9, D18). Four pieces, all under `standin/`:
 | Fake Slurm | `sbatch` / `squeue` / `scancel` / `sacct` on the HPC login node, incl. the epilog hook | `standin/slurm/` |
 | Mock in-house solver | a pre-installed simulation code at a fixed path, submitted via Slurm | `standin/solver/opt/acme-solver/` |
 
-The fake Slurm and the mock solver are plain scripts (bash / Python 3.11 stdlib)
-and run anywhere; the two model services need Docker or Podman.
+The fake Slurm and the mock solver are plain scripts (bash / Python 3.11 stdlib);
+they need a **Linux userland** — `setsid` (detaching the job runner), `flock` (the job-id
+counter) and bash ≥ 4 — so they run on any Linux host and in the `slurm` service, but not
+on a stock macOS (bash 3.2, neither tool present). The two model services need Docker or
+Podman, or the native fallback below.
 
 ## Pins
 
@@ -40,13 +43,44 @@ standin/env-gate.sh              # which test tiers this shell can reach
 standin/up.sh --down             # stop; the model cache is kept
 ```
 
-Without Docker you can still use the fake Slurm and the solver directly:
+Without Docker you can still use the fake Slurm and the solver directly (on Linux):
 
 ```sh
 export PATH="$PWD/standin/slurm/bin:$PWD/standin/solver/opt/acme-solver/bin:$PATH"
 standin/slurm/test.sh && standin/solver/test.sh          # self-tests
 STANDIN_SLURM_EXEC=local standin/smoke.sh slurm          # smoke part (c) on the host
 ```
+
+### Without a container engine (native model services)
+
+Smoke parts (a) and (b), the P1.5 integration tests and the P0.2 spike only need two
+HTTP endpoints, so on a machine with no Docker/Podman they can be run natively. This is
+**not** the CI path — the image pins are what CI asserts — so record the versions with
+any result (done for the 2026-09-06 run in `docs/spikes/providers.md` §2.4):
+
+```sh
+standin/up.sh --print-env >/dev/null           # writes standin/.env with a master key
+set -a; . standin/.env; set +a
+
+LLAMA_CACHE=$PWD/standin/.cache/models llama-server --host 127.0.0.1 --port 8080 \
+  --hf-repo "${STANDIN_HF_REPO:-Qwen/Qwen2.5-1.5B-Instruct-GGUF}" \
+  --hf-file "${STANDIN_HF_FILE:-qwen2.5-1.5b-instruct-q4_k_m.gguf}" \
+  --alias "${STANDIN_MODEL:-qwen2.5-1.5b-instruct}" \
+  --jinja --ctx-size 8192 --parallel 2 --n-predict 1024 --no-webui --metrics &
+
+sed 's|http://llama:8080/v1|http://127.0.0.1:8080/v1|' standin/litellm/litellm_config.yaml > /tmp/litellm.yaml
+uvx --python 3.11 --from 'litellm[proxy]==1.99.0' \
+  litellm --config /tmp/litellm.yaml --port 4000 --host 127.0.0.1 &
+
+eval "$(standin/up.sh --print-env)"
+standin/smoke.sh models && standin/smoke.sh tools && standin/smoke.sh stream
+GRIST_REQUIRE_STANDIN=1 cargo test -p providers --features standin-integration --test standin
+```
+
+Caveats: the container tag `v1.99.1` has no PyPI release (`1.99.0` is the nearest);
+`llama-server` from a package manager is usually a different build than the pinned
+`server-b10818`; smoke part (c) needs the Linux userland above; and `HF_TOKEN` in
+`standin/.env` is only needed for gated repos.
 
 Podman: `COMPOSE="podman compose" standin/up.sh` (or `podman-compose`). The
 compose file uses only `image`, `command`, `environment`, `volumes`, `ports`,
@@ -118,9 +152,13 @@ without touching anything else, e.g. in `standin/.env`:
 
 ```
 STANDIN_HF_REPO=Qwen/Qwen3-1.7B-GGUF
-STANDIN_HF_FILE=Qwen3-1.7B-Q4_K_M.gguf
+STANDIN_HF_FILE=Qwen3-1.7B-Q8_0.gguf
 STANDIN_MODEL=qwen3-1.7b
 ```
+
+(As of 2026-09-06 that repo ships only `Qwen3-1.7B-Q8_0.gguf`, ~1.8 GB; llama.cpp
+lists the available files when the requested one is missing. A Q4_K_M of the same
+model exists in third-party repos, e.g. `unsloth/Qwen3-1.7B-GGUF`.)
 
 and add a matching `model_name: stand-in/qwen3-1.7b` entry to
 `litellm_config.yaml`. Qwen3 emits `<think>…</think>` which llama.cpp returns as
@@ -442,4 +480,6 @@ current shell can reach and `--require` turns that into an exit code for scripts
   serve a model.
 - The P1.5 integration tests and the P3.4 waker test plug into the marked CI step.
 - Model choice: Qwen2.5-1.5B is the tool-calling pin; a reasoning-capable swap
-  (Qwen3) is documented above but not exercised in CI.
+  (Qwen3) is documented above and was exercised once by hand on 2026-09-06 (native
+  stack, `docs/spikes/providers.md` §2.4: `reasoning_content` arrives directly and
+  through LiteLLM and becomes a `Thinking` block), but not in CI.

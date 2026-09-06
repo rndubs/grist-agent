@@ -179,7 +179,7 @@ Per D20. Agents implement against signatures, not prose. Each spec is reviewed b
 - [x] `diff-logs` command: strips envelope fields and asserts byte-identical payloads (D16)
 - [x] Test: a recorded session replays in under a second with zero network access and `diff-logs` passes (`crates/kernel/tests/replay_sessions.rs::a_recorded_session_replays_in_under_a_second`: 13 ms debug; `ReplayProvider` holds no client; 23 record/replay scenarios assert `Recorder::cassette() == Cassette::from_log`; `replay_diff.rs` covers every §5.3 volatile field and the `diff-logs` binary)
 
-### P1.5 — `providers` crate — `done` (stand-in integration tests wired into the opt-in `standin` CI job; first live run needs the `ci:standin` label on the PR)
+### P1.5 — `providers` crate — `done` (stand-in integration tests wired into the opt-in `standin` CI job and run locally against a native stand-in on 2026-09-06; the first CI run needs the `ci:standin` label on the PR)
 
 Depends on P0.2 / ADR-0003.
 
@@ -189,7 +189,7 @@ Depends on P0.2 / ADR-0003.
 - [x] Image content blocks encoded from artifact bytes at request time (D15)
 - [x] Secrets resolved from Host handles at request time only (D10)
 - [x] Token usage from every response recorded into the model call event (D13)
-- [x] Integration tests against the P0.5 stand-in in CI (`crates/providers/tests/standin.rs`, feature `standin-integration`, run by the opt-in `standin` job with `GRIST_REQUIRE_STANDIN=1`); vLLM and LiteLLM tests behind the environment gate (skip when unset)
+- [x] Integration tests against the P0.5 stand-in in CI (`crates/providers/tests/standin.rs`, feature `standin-integration`, run by the opt-in `standin` job with `GRIST_REQUIRE_STANDIN=1`); vLLM and LiteLLM tests behind the environment gate (skip when unset). **Verified locally 2026-09-06**: all five pass under `GRIST_REQUIRE_STANDIN=1` (three stand-in tests exercised, two gated tiers skip) against a native stand-in — llama.cpp b9290 + LiteLLM 1.99.0, no container engine on that host, versions and quirk rows in `docs/spikes/providers.md` §2.4; the same section records `reasoning_content` → `Thinking` end to end against Qwen3-1.7B. The run against the pinned images is still the `ci:standin` job's.
 
 ### P1.6 — `host` crate — `done`
 
@@ -603,3 +603,4 @@ From §15 of the dev plan.
 | 2026-09-06 | Phase 1 exit criteria 1, 2, 3 and 5 met by tests in `crates/orchestrator/tests/exit_criteria.rs` and the kernel migration tests; the soft freeze (criterion 4) waits on P1.9 and the human. |
 | 2026-09-06 | Launcher-path test over the shipped `profiles/` tree (`crates/orchestrator/tests/launcher.rs`); `orchestrator → profiles` recorded as a dev edge. Risk register: secrets, middleware ordering, and profile-structure risks marked mitigated. README status refreshed. |
 | 2026-09-06 | Dev plan bumped to v0.2 (D1–D20, ADR-0001/0003, spike outcomes folded in; specs named normative). PR #3 opened with the `ci:standin` label. |
+| 2026-09-06 | P1.5 verified locally against a native stand-in (no container engine on the host): `standin/up.sh --print-env`, smoke (a)+(b), all five `providers` stand-in tests under `GRIST_REQUIRE_STANDIN=1`, and `spikes/provider-client/run-against.sh standin` on Qwen2.5-1.5B and Qwen3-1.7B; rows and versions in `docs/spikes/providers.md` §2.4, native recipe and two upstream drifts (Qwen3 GGUF filename, LiteLLM `v1.99.1` has no PyPI release) in `docs/standin.md`. P1.7's five `bwrap` tests still unrun: that host is macOS with no `bwrap`, so P1.7 and ADR-0002 are unchanged. Smoke part (c) needs a Linux userland (`setsid`, `flock`, bash ≥ 4) and stays with the `standin-scripts` CI job. |
