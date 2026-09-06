@@ -34,8 +34,8 @@ The inner shape of `spikes/sandbox-nesting/inner-tool-call.sh` (ADR-0002 pending
 | `net.enabled == false` | `--unshare-net` |
 | `net.enabled == true` | `--share-net` (the host **allowlist** is not enforceable by bwrap in P1) |
 | always | `--uid 1000 --gid 1000 --ro-bind / /` (read-only base image) |
+| `scratch_tmpfs_mb` | `--size <mb × 1048576> --tmpfs /tmp` (`--size` precedes the `--tmpfs` it sizes; the tmpfs precedes the policy mounts so a mount under `/tmp` is not shadowed by it) |
 | each `mounts[i]`, shallowest first | `--bind p p` (`Rw`) / `--ro-bind p p` (`Ro`); the most specific path is last and wins |
-| `scratch_tmpfs_mb` | `--size <mb × 1048576> --tmpfs /tmp` (`--size` precedes the `--tmpfs` it sizes) |
 | always | `--proc /proc --dev /dev` |
 | `env_allowlist` ∩ process env, then `cmd.env`, then `HOME=/tmp` | `--clearenv` followed by one `--setenv NAME VALUE` per entry |
 | `cmd.cwd` | `--chdir <cwd>`, default `--chdir /tmp` |
@@ -115,4 +115,12 @@ scope), not to the invocation token, so a cancelled turn leaves it running (§7.
 
 `cargo test -p sandbox --all-features`. Everything runs on a plain Linux host with `bash` and
 `python3`; the tests in `tests/bwrap.rs` skip (printing `skipping: bwrap not available`) when
-`bwrap` is not on `PATH` and need a bwrap host to verify.
+`bwrap` is not on `PATH`. They were first run for real on 2026-09-06 in a Debian bookworm
+container (bwrap 0.8.0, Python 3.11) under a rootless Podman machine (kernel 7.1.8); that run
+found and fixed the tmpfs/mount ordering above. A container is a legitimate host for these
+assertions, but it is not the HPC login node: ADR-0002 still waits on the P0.1 run there.
+
+Running the whole workspace on macOS trips three host assumptions in test harnesses
+(`host`'s spawn test hardcodes `/usr/bin/cat`; a `sandbox` test compares `/tmp` with the
+resolved `/private/tmp`; the tests' `process_gone` reads `/proc/<pid>/status`). They are not
+product bugs; run the suite on Linux, e.g. in a container with the repo bind-mounted.

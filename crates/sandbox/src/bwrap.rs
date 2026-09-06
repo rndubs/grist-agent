@@ -7,8 +7,9 @@
 //! bwrap --unshare-user --unshare-pid --unshare-ipc --unshare-uts [--unshare-net | --share-net]
 //!       --uid 1000 --gid 1000
 //!       --ro-bind / /                       # read-only base image
-//!       (--bind|--ro-bind) <path> <path> …  # one per policy mount, most specific last (it wins)
 //!       --size <bytes> --tmpfs /tmp         # scratch, `scratch_tmpfs_mb` MiB; also $HOME and default cwd
+//!       (--bind|--ro-bind) <path> <path> …  # one per policy mount, most specific last (it wins,
+//!                                           # including over the scratch tmpfs for a mount under /tmp)
 //!       --proc /proc --dev /dev
 //!       --clearenv --setenv NAME VALUE …    # the scrubbed env only (D10)
 //!       --chdir <cmd.cwd or /tmp>
@@ -58,8 +59,8 @@ pub fn policy_to_args(policy: &SandboxPolicy, cmd: &Command) -> Result<Vec<Strin
 /// | policy field | argv |
 /// |---|---|
 /// | (always) | `--unshare-user --unshare-pid --unshare-ipc --unshare-uts --uid 1000 --gid 1000 --ro-bind / /` |
+/// | `scratch_tmpfs_mb` | `--size <mb·1048576> --tmpfs /tmp` (before the mounts, so a policy mount under `/tmp` is not shadowed) |
 /// | `mounts[i]` (sorted, shallowest first) | `--bind p p` for `Rw`, `--ro-bind p p` for `Ro` |
-/// | `scratch_tmpfs_mb` | `--size <mb·1048576> --tmpfs /tmp` |
 /// | `net.enabled == false` | `--unshare-net` |
 /// | `net.enabled == true` | `--share-net` (allowlist not enforceable in P1) |
 /// | `env_allowlist` ∩ process env, `cmd.env`, `HOME=/tmp` | `--clearenv` then `--setenv NAME VALUE` each |
@@ -102,6 +103,15 @@ fn build_args(
     push(&mut args, &["--uid", SANDBOX_UID, "--gid", SANDBOX_GID]);
     push(&mut args, &["--ro-bind", "/", "/"]);
 
+    // The scratch tmpfs goes before the policy mounts: bwrap applies operations in argv order, so
+    // a tmpfs mounted after a bind of a path under `/tmp` would hide that bind (found by
+    // `tests/bwrap.rs` on the first bwrap host, where the test work dir lives under `/tmp`).
+    let bytes = policy.scratch_tmpfs_mb.max(1).saturating_mul(1024 * 1024);
+    push(
+        &mut args,
+        &["--size", &bytes.to_string(), "--tmpfs", SANDBOX_HOME],
+    );
+
     // Shallowest first so the most specific mount is applied last and wins (bwrap semantics).
     let mut mounts: Vec<_> = policy.mounts.iter().collect();
     mounts.sort_by_key(|m| (m.path.components().count(), m.path.clone()));
@@ -114,11 +124,6 @@ fn build_args(
         push(&mut args, &[flag, &p, &p]);
     }
 
-    let bytes = policy.scratch_tmpfs_mb.max(1).saturating_mul(1024 * 1024);
-    push(
-        &mut args,
-        &["--size", &bytes.to_string(), "--tmpfs", SANDBOX_HOME],
-    );
     push(&mut args, &["--proc", "/proc", "--dev", "/dev"]);
 
     push(&mut args, &["--clearenv"]);

@@ -29,5 +29,7 @@ expect_ok   "scratch tmpfs writable"        run_inner sh -c 'echo x > /scratch/x
 expect_fail "network off"                   run_inner python3 -c 'import socket; s=socket.socket(); s.settimeout(2); s.connect(("1.1.1.1",53))'
 SECRET=leak expect_ok "env scrubbed (no SECRET)" run_inner sh -c '[ -z "${SECRET:-}" ]'
 TIMEOUT=2   expect_fail "timeout enforced"  run_inner sleep 30
-expect_ok   "pid ns isolated"               run_inner sh -c '[ "$(ls /proc | grep -c "^[0-9]")" -le 3 ]'
+# The shell's own pid, not a count of /proc entries: a pipeline inside a command substitution
+# forks enough children to push the count past any small threshold even in a fresh namespace.
+expect_ok   "pid ns isolated"               run_inner sh -c 'echo "inner pid $$"; [ "$$" -le 3 ]'
 exit $rc

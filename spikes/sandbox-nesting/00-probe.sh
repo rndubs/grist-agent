@@ -4,7 +4,7 @@ set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd); mkdir -p "$here/results"
 log="$here/results/$(hostname -s)-$(date +%Y%m%d).log"
 exec > >(tee -a "$log") 2>&1
-echo "=== 00-probe $(date -Is) on $(hostname) ==="
+echo "=== 00-probe $(date -u +%Y-%m-%dT%H:%M:%SZ) on $(hostname) ==="
 echo "--- kernel"; uname -a; cat /etc/os-release 2>/dev/null | head -3
 echo "--- podman"; podman --version 2>&1; podman info --format '{{.Host.Security.Rootless}} rootless; runtime={{.Host.OCIRuntime.Name}} {{.Host.OCIRuntime.Version}}; seccomp={{.Host.Security.SECCOMPEnabled}} profile={{.Host.Security.SECCOMPProfilePath}}; apparmor={{.Host.Security.AppArmorEnabled}}; selinux={{.Host.Security.SELinuxEnabled}}' 2>&1
 echo "--- bwrap"; bwrap --version 2>&1; command -v bwrap

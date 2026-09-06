@@ -1,6 +1,7 @@
 # Spike P0.1 — Sandbox nesting on the HPC login node
 
 - **Status:** scripts ready; **awaiting a human run on the login node (🧑)**
+- **Rehearsal:** the five scripts were dry-run on 2026-09-06 under a local rootless Podman machine (macOS host, Fedora VM, not the login node) purely to debug them; see the spike README. Nothing from that run belongs in the tables below.
 - **Milestone:** P0.1 → ADR-0002
 - **Scripts:** `spikes/sandbox-nesting/` (see its README for the run order)
 - **Risk addressed:** bwrap won't nest in rootless Podman under the site's constrained uid map (dev plan §8, §14; D18)
@@ -40,8 +41,10 @@ Why it might fail: nesting needs a second and third unprivileged user namespace 
 | Image build with site userns map | `10-build.sh` | – | | |
 | Podman → outer bwrap, trivial process | `20-outer.sh` | default | | |
 | Podman → outer → inner battery | `30-nested.sh` | default | | |
-| Podman → outer → inner battery | `30-nested.sh` | `no-seccomp` | | only if default failed |
-| Podman → outer → inner battery | `30-nested.sh` | `keep-ns` | | only if default failed |
+| Podman → outer → inner battery | `30-nested.sh` | `unmask` | | only if default failed: `--security-opt unmask=/proc/*` (the inner `--proc` needs a fully visible procfs) |
+| Podman → outer → inner battery | `30-nested.sh` | `label-disable,unmask` | | only if `unmask` failed with EACCES on an SELinux-enforcing host |
+| Podman → outer → inner battery | `30-nested.sh` | `no-seccomp` | | only if the above failed |
+| Podman → outer → inner battery | `30-nested.sh` | `keep-ns` | | drops the site uid map for `--userns=keep-id` (mutually exclusive); a diagnostic, not the target |
 | Podman → outer → inner battery | `30-nested.sh` | `sys-admin` | | diagnostic only, never a production setting |
 | Host bwrap → bwrap (fallback, no container) | `40-fallback-host.sh` | – | | |
 
@@ -54,7 +57,7 @@ Record per item, with the exact error text:
 - 2002-uid map (`--uidmap 0:0:2000 --uidmap 65534:2000:2`):
 - Podman default seccomp profile:
 - `--userns` mode:
-- `/proc` mounts inside nested namespaces:
+- `/proc` mounts inside nested namespaces (Podman's masked paths under `/proc`; SELinux label on an enforcing host):
 - Other:
 
 ## Fallbacks (only if neither the nested stack nor host bwrap works)
@@ -73,6 +76,8 @@ Per dev plan §14: namespace-per-container (one Podman container per tool call, 
 ```
 scp -r spikes/sandbox-nesting <login-node>:~/ && ssh <login-node>
 cd sandbox-nesting && ./00-probe.sh && ./10-build.sh && ./20-outer.sh && ./30-nested.sh && ./40-fallback-host.sh
-# on failure of 30: VARIANT=no-seccomp ./30-nested.sh ; VARIANT=keep-ns ./30-nested.sh
+# on failure of 30, in this order, recording each:
+#   VARIANT=unmask ./30-nested.sh ; VARIANT=label-disable,unmask ./30-nested.sh
+#   VARIANT=no-seccomp ./30-nested.sh ; VARIANT=keep-ns ./30-nested.sh
 cat results/*.log
 ```
