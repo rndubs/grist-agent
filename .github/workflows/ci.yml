@@ -58,7 +58,23 @@ jobs:
         with:
           toolchain: 1.94.1
       - uses: Swatinem/rust-cache@v2
+      # The runner is a VM, so `bwrap` can create user namespaces here (unlike a container job).
+      # P1.7's five `bwrap` tests must run, not skip: GRIST_REQUIRE_BWRAP=1 turns their skip
+      # into a failure (same convention as GRIST_REQUIRE_STANDIN in the stand-in job).
+      # Ubuntu 24.04 runners ship kernel.apparmor_restrict_unprivileged_userns=1, under which an
+      # unprivileged user namespace lacks the capabilities bwrap needs to set up its network
+      # namespace (`bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted`). The VM is
+      # disposable, so the restriction is switched off for the job; a real deployment host is
+      # configured by ADR-0002, not by this line.
+      - name: Install bubblewrap
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq bubblewrap
+          bwrap --version
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          bwrap --unshare-user --unshare-pid --unshare-net --ro-bind / / --proc /proc --dev /dev --tmpfs /tmp -- true && echo "userns + proc mount ok"
       - run: cargo test --workspace --all-features
+        env:
+          GRIST_REQUIRE_BWRAP: "1"
 
   msrv:
     name: MSRV build

@@ -1,6 +1,7 @@
 //! `BwrapBackend` end to end. These need a host with `bwrap` on `PATH` (and permission to create
-//! user namespaces); without it every test prints `skipping: bwrap not available` and passes.
-//! Needs a bwrap host to verify.
+//! user namespaces); without it every test prints `skipping: bwrap not available` and passes,
+//! unless `GRIST_REQUIRE_BWRAP=1` (what the CI `test` job sets), in which case a missing `bwrap`
+//! fails the test instead of skipping it.
 
 mod support;
 
@@ -18,6 +19,8 @@ use sandbox::bwrap::program_available;
 fn skip() -> bool {
     if program_available("bwrap") {
         false
+    } else if std::env::var("GRIST_REQUIRE_BWRAP").as_deref() == Ok("1") {
+        panic!("bwrap not on PATH but GRIST_REQUIRE_BWRAP=1 (the bwrap tests must run in CI)")
     } else {
         println!("skipping: bwrap not available");
         true
