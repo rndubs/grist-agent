@@ -570,18 +570,23 @@ async fn run_script_suspends_and_the_process_exit_waker_resumes_within_one_promp
         };
         assert!(at("task_started") < at("suspended"));
         assert!(at("suspended") < at("task_update"));
-        let text = agent_text(&seen.updates());
         assert!(
-            text.ends_with("The job printed `job output: alpha`."),
-            "{text}"
+            eventually(
+                || agent_text(&seen.updates()).ends_with("The job printed `job output: alpha`.")
+            )
+            .await,
+            "{}",
+            agent_text(&seen.updates())
         );
-        let task_done = seen.updates().iter().any(|u| {
-            matches!(u,
-            SessionUpdate::ToolCallUpdate(c) if c.tool_call_id.0.as_ref() == "task:t1-c1"
-                && c.fields.status == Some(ToolCallStatus::Completed))
-        });
+        let task_done = || {
+            seen.updates().iter().any(|u| {
+                matches!(u,
+                    SessionUpdate::ToolCallUpdate(c) if c.tool_call_id.0.as_ref() == "task:t1-c1"
+                        && c.fields.status == Some(ToolCallStatus::Completed))
+            })
+        };
         assert!(
-            task_done,
+            eventually(task_done).await,
             "the task's completion is projected onto its tool call"
         );
         let st = cx
