@@ -33,7 +33,7 @@ This file is the single source of truth for progress. Update it in the same PR a
 | Phase | Name | Status | Milestones done | Exit criteria met |
 |---|---|---|---|---|
 | P0 | Spikes (de-risk before design freeze) | in progress | 2 / 6 | no |
-| P1 | Kernel + local daemon | in progress | 8 / 10 done (P1.0–P1.6 except P1.7, P1.8); P1.7 landed, bwrap tests need a host; P1.9 not started | no |
+| P1 | Kernel + local daemon | in progress | 8 / 10 done (P1.0–P1.6, P1.8); P1.7 landed, bwrap tests need a host; P1.9 not started | 4 / 5 (soft freeze is a 🧑 decision at exit) |
 | P2 | Extensions and specialization | not started | 0 / 9 | no |
 | P3 | Provenance and orchestration | not started | 0 / 7 | no |
 | P4 | Evolve loop | not started | 0 / 7 | no |
@@ -237,11 +237,11 @@ Open question §15.2 (wire protocol) is decided here.
 
 ### Exit criteria — Phase 1
 
-- [ ] A coding session (read/edit/bash on a real repo) is recorded and replays with `diff-logs` passing and no network (recorded: `exit_criteria.rs::coding_session_read_edit_bash_is_recorded`; replay + `diff-logs` with P1.4)
-- [ ] A `run_script` session (start, suspend, process-exit waker, resume, finish) is recorded and replays the same way (recorded: `exit_criteria.rs::run_script_session_suspends_and_the_process_exit_waker_resumes_it`; replay with P1.4)
+- [x] A coding session (read/edit/bash on a real repo) is recorded and replays with `diff-logs` passing and no network (`crates/orchestrator/tests/exit_criteria.rs::coding_session_replays_with_diff_logs_passing_and_no_network`: real checkout, `NativeHost`, `None` backend; replay never calls the provider, leaves the checkout untouched, and `diff_logs` is identical)
+- [x] A `run_script` session (start, suspend, process-exit waker, resume, finish) is recorded and replays the same way (`exit_criteria.rs::run_script_session_replays_with_diff_logs_passing_and_no_network`)
 - [x] Session reaches `failed` on provider exhaustion and resumes from its checkpoint (`crates/orchestrator/tests/exit_criteria.rs::provider_exhaustion_fails_the_session_and_it_resumes_from_its_checkpoint`, in-process and from the file)
-- [ ] `kernel` soft-frozen: changes now require an ADR (D12)
-- [ ] `State.schema_version` migrations exercised by at least one test
+- [ ] 🧑 `kernel` soft-frozen: changes now require an ADR (D12) — declared by the human at Phase 1 exit, after P1.9; the CODEOWNERS/CI check in the boundary track lands with it
+- [x] `State.schema_version` migrations exercised by at least one test (`crates/kernel/tests/core_types.rs::migration_registry_runs_registered_steps_and_fails_loudly_otherwise`, `loop_open.rs::open_migrates_an_old_checkpoint_and_logs_state_migrated`, `log_recovery.rs::an_older_schema_checkpoint_restores_through_a_registered_migration`)
 
 ---
 
@@ -599,3 +599,4 @@ From §15 of the dev plan.
 | 2026-09-06 | P1.8 `profiles` landed with the in-repo `profiles/` tree (catalog, bundles, `stand-in` model, `default` agent): per-file validation with exact TOML paths, D7 merge, bundle and placeholder expansion, symbolic `resolved_profile_hash`, narrowing checks, prompt assembly, `KernelInputs` for the launcher; 63 tests. Clarifications recorded in `profile-schema.md` §13 as **[clarified in P1.8]**. |
 | 2026-09-06 | Phase 1 exit-criteria sessions added in `crates/orchestrator/tests/exit_criteria.rs` (real kernel + `NativeHost` + `None` backend + base tools + file log): coding session recorded, `run_script` suspend/waker/resume recorded, provider exhaustion → `failed` → resume proven. The `orchestrator → sandbox, host` edges are used as dev-dependencies for these tests. |
 | 2026-09-06 | P1.4 record/replay landed in `crates/kernel/src/replay/`: `Cassette` (the log is the cassette), `Recorder` at 990, `ReplayProvider`, `ReplayTool` with the driver's checkpoint tracker, `ReplayDriver`, `diff_logs` and the `diff-logs` binary; 28 tests. Two kernel-shape additions recorded in `kernel-interface.md` §3.6 as **[clarified in P1.4]**: `ToolResult::Replayed(ToolOutput)` and `ToolOutput.in_process_waker`. |
+| 2026-09-06 | Phase 1 exit criteria 1, 2, 3 and 5 met by tests in `crates/orchestrator/tests/exit_criteria.rs` and the kernel migration tests; the soft freeze (criterion 4) waits on P1.9 and the human. |

@@ -6,8 +6,9 @@
 //! 2. a `run_script` session (start, suspend, process-exit waker, resume, finish) is recorded;
 //! 3. a session reaches `failed` on provider exhaustion and resumes from its checkpoint.
 //!
-//! The replay half of criteria 1 and 2 (`ReplayProvider` + `diff-logs`) is in `replay_criteria.rs`
-//! once P1.4 lands; these tests keep their recorded logs so that file can reuse the shape.
+//! Criteria 1 and 2 are then replayed (`ReplayProvider` + `ReplayTool`s + `ReplayDriver`, P1.4)
+//! against a file-backed replay log, with the checkout left untouched, and `diff_logs` must
+//! report byte-identical payloads (D16).
 
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
@@ -18,7 +19,9 @@ use ::host::{MapSecretSource, NativeHost};
 use ::sandbox::{NoneBackend, base_tools};
 use async_trait::async_trait;
 use kernel::event::CheckpointReason;
+use kernel::event::LogMode;
 use kernel::log::FileEventLog;
+use kernel::replay::ReplayDriver;
 use kernel::*;
 use serde_json::{Value, json};
 
@@ -142,10 +145,21 @@ impl Session {
 
     fn config(&self, log: Arc<dyn EventLog>, retry: RetryPolicy) -> KernelConfig {
         let tools = base_tools(&self.workdir, self.sandbox.clone());
+        self.config_with(log, retry, tools, self.provider.clone(), vec![])
+    }
+
+    fn config_with(
+        &self,
+        log: Arc<dyn EventLog>,
+        retry: RetryPolicy,
+        tools: Vec<Arc<dyn Tool>>,
+        provider: Arc<dyn Provider>,
+        middleware: Vec<MiddlewareEntry>,
+    ) -> KernelConfig {
         KernelConfig {
             tools,
-            middleware: vec![],
-            provider: self.provider.clone(),
+            middleware,
+            provider,
             host: self.host.clone(),
             artifact_store: Arc::new(NoopArtifactStore),
             memory: Arc::new(NoopMemory),
@@ -469,4 +483,216 @@ async fn provider_exhaustion_fails_the_session_and_it_resumes_from_its_checkpoin
         .unwrap()
         .unwrap();
     assert_eq!(restored.state.session_status, SessionStatus::Idle);
+}
+
+// ---- criteria 1 and 2, replay half: no network, checkout untouched, diff-logs identical --------
+
+/// Record `script` live with a `Recorder` in the chain, then replay the cassette against the same
+/// configuration with `ReplayProvider` and `ReplayTool`s, and require `diff_logs` to be identical.
+/// Returns the elapsed replay time.
+async fn record_then_replay(
+    dir: &Path,
+    script: Vec<Result<ModelResponse, ProviderError>>,
+    user: &str,
+    expect_suspension: bool,
+) -> Duration {
+    let repo = make_repo(dir);
+    let provider = Scripted::new(script);
+    let s = Session::new(dir, provider.clone());
+
+    // ---- record ----
+    let rec = Arc::new(Recorder::new());
+    let log = s.create_log().await;
+    let tools = base_tools(&s.workdir, s.sandbox.clone());
+    let mut k = Kernel::create(
+        s.config_with(
+            log.clone(),
+            fast_retry(2),
+            tools.clone(),
+            provider.clone(),
+            vec![Recorder::entry(rec.clone())],
+        ),
+        s.init(),
+    )
+    .await
+    .unwrap();
+    rec.attach(&k.handle());
+    k.handle()
+        .enqueue_user_message(Message::user_text(user))
+        .unwrap();
+    if expect_suspension {
+        assert!(matches!(k.run().await.unwrap(), RunStop::Suspended(_)));
+    }
+    assert_eq!(k.run().await.unwrap(), RunStop::Idle);
+    let recorded_state = k.state().clone();
+    let cassette = rec.cassette();
+    assert_eq!(rec.lagged(), 0);
+    assert_eq!(cassette, Cassette::from_log(&*log.reader()).unwrap());
+    drop(k);
+    drop(log);
+    let after_record = snapshot_tree(&repo);
+
+    // ---- replay ----
+    // Put the checkout back the way it was: replay must not touch it.
+    std::fs::remove_dir_all(&repo).unwrap();
+    make_repo(dir);
+    let pristine = snapshot_tree(&repo);
+    assert_ne!(
+        pristine, after_record,
+        "the live session changed the checkout"
+    );
+    let cassette = Arc::new(cassette);
+    let driver = ReplayDriver::new(cassette.clone());
+    let replay_tools: Vec<Arc<dyn Tool>> = tools
+        .iter()
+        .map(|t| Arc::new(driver.tool(t.definition(), t.kind(), t.capabilities())) as Arc<dyn Tool>)
+        .collect();
+    let replay_rec = Arc::new(Recorder::new());
+    let replay_log = Arc::new(
+        FileEventLog::create_with_mode(
+            &dir.join("replay.jsonl"),
+            SessionId("s_exit".into()),
+            LogMode::Replay,
+            s.redactor.clone(),
+        )
+        .await
+        .unwrap(),
+    );
+    let calls_before = provider.calls();
+    let start = std::time::Instant::now();
+    let mut k2 = Kernel::create(
+        s.config_with(
+            replay_log.clone(),
+            fast_retry(2),
+            replay_tools,
+            Arc::new(driver.provider()),
+            vec![Recorder::entry(replay_rec.clone())],
+        ),
+        s.init(),
+    )
+    .await
+    .unwrap();
+    replay_rec.attach(&k2.handle());
+    let stop = driver.drive(&mut k2).await.unwrap();
+    let elapsed = start.elapsed();
+    assert_eq!(stop, RunStop::Idle);
+
+    // No live model call, no tool ran, the checkout is exactly as before the replay.
+    assert_eq!(
+        provider.calls(),
+        calls_before,
+        "the scripted provider was never called"
+    );
+    assert_eq!(
+        snapshot_tree(&repo),
+        pristine,
+        "replay touched the checkout"
+    );
+    assert_eq!(
+        k2.state().state_hash().unwrap(),
+        recorded_state.state_hash().unwrap()
+    );
+    assert_eq!(k2.state().messages, recorded_state.messages);
+    // A replay is itself a recording of the same cassette.
+    let again = replay_rec.cassette();
+    assert_eq!(again.model, cassette.model);
+    assert_eq!(again.tools, cassette.tools);
+    drop(k2);
+    drop(replay_log);
+
+    // diff-logs (D16): effective logs, envelope and volatile fields stripped, byte-identical.
+    let recorded = FileEventLog::snapshot(&s.log_path).unwrap();
+    let replayed = FileEventLog::snapshot(&dir.join("replay.jsonl")).unwrap();
+    let report = diff_logs(&recorded, &replayed).unwrap();
+    assert!(
+        report.identical,
+        "diff-logs: {:?} (compared {})",
+        report.first_diff, report.compared
+    );
+    assert!(report.compared > 10);
+    let modes: Vec<LogMode> = replayed
+        .iter()
+        .filter_map(|e| match e.unwrap().body {
+            EventBody::LogOpened(p) => Some(p.mode),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(modes, [LogMode::Replay]);
+    assert_eq!(replay_rec.lagged(), 0);
+    elapsed
+}
+
+fn snapshot_tree(root: &Path) -> Vec<(String, Vec<u8>)> {
+    let mut out = Vec::new();
+    fn walk(root: &Path, dir: &Path, out: &mut Vec<(String, Vec<u8>)>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let p = entry.unwrap().path();
+            if p.is_dir() {
+                walk(root, &p, out);
+            } else {
+                let rel = p.strip_prefix(root).unwrap().display().to_string();
+                out.push((rel, std::fs::read(&p).unwrap()));
+            }
+        }
+    }
+    walk(root, root, &mut out);
+    out.sort();
+    out
+}
+
+#[tokio::test]
+async fn coding_session_replays_with_diff_logs_passing_and_no_network() {
+    let dir = tempfile::tempdir().unwrap();
+    let elapsed = record_then_replay(
+        dir.path(),
+        vec![
+            Ok(call("c1", "read", json!({"path": "src/greet.py"}))),
+            Ok(call(
+                "c2",
+                "edit",
+                json!({"path": "src/greet.py", "old_string": "'hello '", "new_string": "'hi, '"}),
+            )),
+            Ok(call(
+                "c3",
+                "bash",
+                json!({"command": "python3 src/greet.py"}),
+            )),
+            Ok(call(
+                "c4",
+                "write",
+                json!({"path": "NOTES.md", "content": "greeting changed\n"}),
+            )),
+            Ok(text("Changed the greeting and left a note.")),
+        ],
+        "Change the greeting in src/greet.py from hello to hi, run it, and leave a note.",
+        false,
+    )
+    .await;
+    assert!(elapsed < Duration::from_secs(1), "replay took {elapsed:?}");
+}
+
+#[tokio::test]
+async fn run_script_session_replays_with_diff_logs_passing_and_no_network() {
+    let dir = tempfile::tempdir().unwrap();
+    let elapsed = record_then_replay(
+        dir.path(),
+        vec![
+            Ok(call(
+                "c1",
+                "run_script",
+                json!({"path": "job.sh", "args": ["beta"]}),
+            )),
+            Ok(text("Started the job; I'll wait for it.")),
+            Ok(call(
+                "c2",
+                "bash",
+                json!({"command": "echo replayed > marker.txt"}),
+            )),
+            Ok(text("The job printed `job output: beta`. Done.")),
+        ],
+        "Run job.sh with beta, then write a marker file.",
+        true,
+    )
+    .await;
+    assert!(elapsed < Duration::from_secs(1), "replay took {elapsed:?}");
 }
