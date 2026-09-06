@@ -1,0 +1,228 @@
+#!/usr/bin/env bash
+# Fake sbatch (P0.5, D18). Runs the batch script in the background, writes a
+# Slurm-like slurm-<id>.out, and calls the epilog hook ($FAKE_SLURM_EPILOG) on exit.
+#
+# Supported: #SBATCH directives, -J/--job-name, -o/--output, -e/--error,
+# -D/--chdir, -p/--partition, -t/--time, -N -n -c, --mem, -A, --wrap, --export,
+# --parsable, --wait/-W, -H/--hold (rejected), --version, --help, script on stdin.
+# Filename patterns %j %x %u %N %A are expanded. Other options with a value
+# are accepted and ignored; unknown bare options are an error, like real sbatch.
+set -euo pipefail
+
+here=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
+# shellcheck source=../lib/fake-slurm.sh
+source "$here/../lib/fake-slurm.sh"
+runner="$here/../libexec/fake-slurm-runner"
+
+usage() {
+  cat <<USAGE
+Usage: sbatch [OPTIONS...] executable [args...]
+       sbatch [OPTIONS...] --wrap "command"
+fake-slurm $FAKE_SLURM_VERSION -- see docs/standin.md
+USAGE
+}
+
+# ---- option parsing ---------------------------------------------------------
+# fs_parse_opts PREFIX ARGS... : sets PREFIX_<name> variables. Positional
+# arguments (script + its args) are appended to the global array `positional`
+# and parsing of options stops at the first positional (sbatch semantics).
+declare -a positional=()
+value_opts=":job-name:output:error:chdir:workdir:partition:time:nodes:ntasks:cpus-per-task:mem:mem-per-cpu:account:wrap:export:mail-type:mail-user:qos:gres:gpus:constraint:nodelist:exclude:array:dependency:comment:signal:uid:gid:licenses:reservation:begin:time-min:ntasks-per-node:distribution:hint:threads-per-core:cpus-per-gpu:mem-per-gpu:input:open-mode:priority:wckey:cluster:clusters:core-spec:deadline:delay-boot:gpus-per-node:gpus-per-task:sockets-per-node:cores-per-socket:tmp:tres-per-task:prefer:container:"
+flag_opts=":parsable:wait:hold:verbose:quiet:requeue:no-requeue:overcommit:oversubscribe:test-only:usage:help:version:get-user-env:ignore-pbs:kill-on-invalid-dep:no-kill:spread-job:use-min-nodes:contiguous:exclusive:nice:propagate:"
+short_value="JoeDptNncAqCwxdiLmk"   # short options that take a value
+short_flag="WHvQOshV"               # short options that are flags
+
+fs_parse_opts() {
+  local prefix="$1"; shift
+  local a name val
+  while (($# > 0)); do
+    a="$1"; shift
+    case "$a" in
+      --)
+        positional+=("$@"); return 0 ;;
+      --*=*)
+        name=${a#--}; val=${name#*=}; name=${name%%=*}
+        fs_set_opt "$prefix" "$name" "$val" ;;
+      --*)
+        name=${a#--}
+        if [[ "$value_opts" == *":$name:"* ]]; then
+          (($# > 0)) || fs_die "sbatch: error: option '--$name' requires an argument"
+          val="$1"; shift
+          fs_set_opt "$prefix" "$name" "$val"
+        elif [[ "$flag_opts" == *":$name:"* ]]; then
+          fs_set_opt "$prefix" "$name" 1
+        else
+          fs_die "sbatch: unrecognized option '--$name'"
+        fi ;;
+      -?*)
+        local ch=${a:1:1} rest=${a:2}
+        if [[ "$short_value" == *"$ch"* ]]; then
+          if [[ -n "$rest" ]]; then val="$rest"; else
+            (($# > 0)) || fs_die "sbatch: error: option '-$ch' requires an argument"
+            val="$1"; shift
+          fi
+          fs_set_opt "$prefix" "$(fs_short_to_long "$ch")" "$val"
+        elif [[ "$short_flag" == *"$ch"* ]]; then
+          fs_set_opt "$prefix" "$(fs_short_to_long "$ch")" 1
+          # bundled flags like -Wv
+          [[ -n "$rest" ]] && set -- "-$rest" "$@"
+        else
+          fs_die "sbatch: invalid option -- '$ch'"
+        fi ;;
+      *)
+        positional+=("$a" "$@"); return 0 ;;
+    esac
+  done
+}
+
+fs_short_to_long() {
+  case "$1" in
+    J) echo job-name ;; o) echo output ;; e) echo error ;; D) echo chdir ;;
+    p) echo partition ;; t) echo time ;; N) echo nodes ;; n) echo ntasks ;;
+    c) echo cpus-per-task ;; A) echo account ;; q) echo qos ;; C) echo constraint ;;
+    w) echo nodelist ;; x) echo exclude ;; d) echo dependency ;; i) echo input ;;
+    L) echo licenses ;; m) echo distribution ;; k) echo no-kill ;;
+    W) echo wait ;; H) echo hold ;; v) echo verbose ;; Q) echo quiet ;;
+    O) echo overcommit ;; s) echo oversubscribe ;; h) echo help ;; V) echo version ;;
+    *) echo "$1" ;;
+  esac
+}
+
+fs_set_opt() {
+  local prefix="$1" name="$2" val="$3"
+  [[ "$name" == workdir ]] && name=chdir
+  name=${name//-/_}
+  printf -v "${prefix}_${name}" '%s' "$val"
+}
+
+# opt NAME -> CLI value if set, else directive value, else default ($2)
+opt() {
+  local n=${1//-/_} c d
+  c="cli_$n"; d="dir_$n"
+  if [[ -n "${!c-}" ]]; then printf '%s' "${!c}"
+  elif [[ -n "${!d-}" ]]; then printf '%s' "${!d}"
+  else printf '%s' "${2-}"; fi
+}
+
+fs_parse_opts cli "$@"
+
+if [[ -n "${cli_help-}" || -n "${cli_usage-}" ]]; then usage; exit 0; fi
+if [[ -n "${cli_version-}" ]]; then echo "slurm $FAKE_SLURM_VERSION"; exit 0; fi
+
+# ---- locate the script ------------------------------------------------------
+script_src=""
+script_args=()
+if [[ -n "${cli_wrap-}" ]]; then
+  (( ${#positional[@]} == 0 )) || fs_die "sbatch: error: --wrap and a script cannot be combined"
+elif (( ${#positional[@]} > 0 )); then
+  script_src="${positional[0]}"
+  script_args=("${positional[@]:1}")
+  [[ -r "$script_src" ]] || fs_die "sbatch: error: Unable to open file $script_src"
+elif [[ ! -t 0 ]]; then
+  script_src="-"
+else
+  fs_die "sbatch: error: No script specified"
+fi
+
+# ---- allocate the job ------------------------------------------------------
+fs_init
+id=$(fs_next_id)
+jobdir=$(fs_jobdir "$id")
+mkdir -p "$jobdir"
+
+if [[ -n "${cli_wrap-}" ]]; then
+  printf '#!/bin/sh\n# --wrap\n%s\n' "$cli_wrap" >"$jobdir/script"
+  script_display="wrap"
+elif [[ "$script_src" == "-" ]]; then
+  cat >"$jobdir/script"
+  script_display="stdin"
+else
+  cp "$script_src" "$jobdir/script"
+  script_display=$(readlink -f "$script_src")
+fi
+chmod 0755 "$jobdir/script"
+: >"$jobdir/args"
+for a in "${script_args[@]+"${script_args[@]}"}"; do printf '%s\n' "$a" >>"$jobdir/args"; done
+
+# ---- #SBATCH directives (only in the leading comment block, like Slurm) -----
+while IFS= read -r line || [[ -n "$line" ]]; do
+  case "$line" in
+    '#!'*) continue ;;
+    '#SBATCH'*)
+      rest=${line#\#SBATCH}
+      rest=${rest%%#*}          # trailing comment
+      read -r -a words <<<"$rest"
+      saved=("${positional[@]+"${positional[@]}"}")
+      positional=()
+      fs_parse_opts dir "${words[@]+"${words[@]}"}"
+      positional=("${saved[@]+"${saved[@]}"}") ;;
+    '#'*|'') continue ;;
+    *) break ;;
+  esac
+done <"$jobdir/script"
+
+if [[ -n "$(opt array)" ]]; then rm -rf "$jobdir"; fs_die "sbatch: error: job arrays are not supported by fake-slurm"; fi
+if [[ -n "$(opt hold)" ]]; then rm -rf "$jobdir"; fs_die "sbatch: error: --hold is not supported by fake-slurm"; fi
+
+user=$(fs_user)
+if [[ -n "${cli_wrap-}" ]]; then default_name="wrap"; else default_name=$(basename "${script_src/#-/sbatch}"); fi
+name=$(opt job-name "$default_name")
+partition=$(opt partition "$FAKE_SLURM_DEFAULT_PARTITION")
+workdir=$(opt chdir "$PWD")
+workdir=$(cd "$workdir" 2>/dev/null && pwd) || { rm -rf "$jobdir"; fs_die "sbatch: error: invalid directory $(opt chdir)"; }
+stdout_pat=$(opt output "slurm-%j.out")
+stderr_pat=$(opt error "$stdout_pat")
+stdout_path=$(fs_expand_pattern "$stdout_pat" "$id" "$name" "$user")
+stderr_path=$(fs_expand_pattern "$stderr_pat" "$id" "$name" "$user")
+[[ "$stdout_path" == /* ]] || stdout_path="$workdir/$stdout_path"
+[[ "$stderr_path" == /* ]] || stderr_path="$workdir/$stderr_path"
+time_limit=$(fs_parse_time "$(opt time 0)")
+
+{
+  printf 'id=%s\n' "$id"
+  printf 'name=%s\n' "$name"
+  printf 'user=%s\n' "$user"
+  printf 'uid=%s\n' "$(id -u)"
+  printf 'partition=%s\n' "$partition"
+  printf 'account=%s\n' "$(opt account "$user")"
+  printf 'workdir=%s\n' "$workdir"
+  printf 'stdout=%s\n' "$stdout_path"
+  printf 'stderr=%s\n' "$stderr_path"
+  printf 'script=%s\n' "$script_display"
+  printf 'submit_time=%s\n' "$(fs_now)"
+  printf 'time_limit=%s\n' "$time_limit"
+  printf 'nodes=%s\n' "$(opt nodes 1)"
+  printf 'ntasks=%s\n' "$(opt ntasks 1)"
+  printf 'cpus_per_task=%s\n' "$(opt cpus-per-task 1)"
+  printf 'export=%s\n' "$(opt export ALL)"
+  printf 'epilog=%s\n' "${FAKE_SLURM_EPILOG-}"
+  printf 'pending_seconds=%s\n' "${FAKE_SLURM_PENDING_SECONDS:-0}"
+} >"$jobdir/meta.tmp" && mv -f "$jobdir/meta.tmp" "$jobdir/meta"
+fs_write "$jobdir/state" PENDING
+
+# ---- detach the runner ------------------------------------------------------
+[[ -x "$runner" ]] || fs_die "sbatch: error: runner missing at $runner"
+setsid nohup "$runner" "$id" </dev/null >"$jobdir/runner.log" 2>&1 &
+disown 2>/dev/null || true
+
+if [[ -n "$(opt parsable)" ]]; then
+  echo "$id"
+else
+  echo "Submitted batch job $id"
+fi
+
+if [[ -n "$(opt wait)" ]]; then
+  while :; do
+    st=$(fs_read "$jobdir/state")
+    case "$st" in
+      COMPLETED|FAILED|CANCELLED|TIMEOUT) break ;;
+    esac
+    fs_refresh_job "$jobdir"
+    sleep 0.2
+  done
+  rc=$(fs_read "$jobdir/exit_code" 1)
+  if [[ "$st" != COMPLETED ]]; then
+    echo "sbatch: error: Batch job submission failed: job $id $st (exit code $rc)" >&2
+  fi
+  exit "$rc"
+fi

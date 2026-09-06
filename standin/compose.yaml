@@ -1,0 +1,126 @@
+# CI stand-in stack (P0.5, D18): llama.cpp (OpenAI-compatible endpoint with a
+# small tool-calling model) -> LiteLLM proxy -> fake Slurm + mock solver.
+#
+# Start with `standin/up.sh` (generates .env with a master key, waits for
+# health). Ports and variables are documented in docs/standin.md.
+#
+# Every image and the model file are pinned. Bump them together with the
+# expected-behaviour notes in docs/standin.md.
+
+name: grist-standin
+
+services:
+  # ---------------------------------------------------------------------------
+  # llama.cpp server: OpenAI-compatible /v1/chat/completions with tool calling.
+  # The GGUF is fetched from Hugging Face on first start into the LLAMA_CACHE
+  # volume (bind-mounted so CI can cache it between runs); it is not in git.
+  # ---------------------------------------------------------------------------
+  llama:
+    image: ghcr.io/ggml-org/llama.cpp:server-b10818
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --hf-repo
+      - ${STANDIN_HF_REPO:-Qwen/Qwen2.5-1.5B-Instruct-GGUF}
+      - --hf-file
+      - ${STANDIN_HF_FILE:-qwen2.5-1.5b-instruct-q4_k_m.gguf}
+      - --alias
+      - ${STANDIN_MODEL:-qwen2.5-1.5b-instruct}
+      - --jinja                 # required: enables chat-template tool calling
+      - --ctx-size
+      - "8192"                  # shared across --parallel slots (4096 each)
+      - --parallel
+      - "2"
+      - --n-predict
+      - "1024"
+      - --threads
+      - ${STANDIN_LLAMA_THREADS:--1}
+      - --no-webui
+      - --metrics
+    environment:
+      LLAMA_CACHE: /models
+      LLAMA_LOG_VERBOSITY: "1"
+      HF_TOKEN: ${HF_TOKEN:-}
+    volumes:
+      - ${STANDIN_MODEL_CACHE:-./.cache/models}:/models
+    ports:
+      - "${STANDIN_LLAMA_PORT:-8080}:8080"
+    healthcheck:
+      # /health returns 503 while the model loads and 200 once slots are ready.
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 90            # first start includes a ~1.1 GB download
+      start_period: 60s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # LiteLLM proxy: `stand-in/<model>` -> llama. Master key from the environment.
+  # ---------------------------------------------------------------------------
+  litellm:
+    image: ghcr.io/berriai/litellm:v1.99.1
+    command: ["--config", "/app/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY (standin/up.sh writes one into standin/.env)}
+      LITELLM_LOG: ${STANDIN_LITELLM_LOG:-INFO}
+      LITELLM_TELEMETRY: "False"
+      DO_NOT_TRACK: "1"
+      NO_DOCS: "False"
+    volumes:
+      - ./litellm/litellm_config.yaml:/app/config.yaml:ro
+    ports:
+      - "${STANDIN_LITELLM_PORT:-4000}:4000"
+    depends_on:
+      llama:
+        condition: service_healthy
+    healthcheck:
+      # The image may or may not ship curl; python is always there.
+      test:
+        - CMD-SHELL
+        - >-
+          python3 -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:4000/health/readiness', timeout=5).status == 200 else 1)"
+          || python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:4000/health/readiness', timeout=5).status == 200 else 1)"
+          || curl -fsS http://localhost:4000/health/readiness
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # "Login node": fake sbatch/squeue/scancel/sacct on PATH and the mock solver
+  # at its fixed install path /opt/acme-solver (D9). Jobs run in /scratch.
+  # Reach LiteLLM from inside as http://litellm:4000 (STANDIN_* are exported).
+  # ---------------------------------------------------------------------------
+  slurm:
+    image: python:3.11-slim-bookworm
+    init: true                # reap the detached job runners
+    command: ["sleep", "infinity"]
+    working_dir: /scratch
+    environment:
+      PATH: /opt/fake-slurm/bin:/opt/acme-solver/bin:/usr/local/bin:/usr/bin:/bin
+      FAKE_SLURM_STATE_DIR: /var/lib/fake-slurm
+      FAKE_SLURM_EPILOG: ${STANDIN_SLURM_EPILOG:-/opt/fake-slurm/libexec/default-epilog}
+      ACME_SOLVER_HOME: /opt/acme-solver
+      STANDIN_OPENAI_BASE_URL: http://llama:8080/v1
+      STANDIN_LITELLM_BASE_URL: http://litellm:4000/v1
+      STANDIN_LITELLM_KEY: ${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY}
+      STANDIN_MODEL: ${STANDIN_MODEL:-qwen2.5-1.5b-instruct}
+    volumes:
+      - ./slurm:/opt/fake-slurm:ro
+      - ./solver/opt/acme-solver:/opt/acme-solver:ro
+      - slurm-scratch:/scratch
+      - slurm-state:/var/lib/fake-slurm
+    healthcheck:
+      test: ["CMD-SHELL", "sbatch --version && solve --version && squeue -h >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  slurm-scratch:
+  slurm-state:

@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# Fake scancel (P0.5). Marks jobs cancelled and kills the batch script's process
+# group. Supports job ids, -n/--name, -u/--user, --me, -s/--signal (just sends
+# the signal, no state change), -v, -q, -V.
+set -euo pipefail
+here=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
+# shellcheck source=../lib/fake-slurm.sh
+source "$here/../lib/fake-slurm.sh"
+
+ids=(); name_filter=""; user_filter=""; signal=""; quiet=0
+while (($# > 0)); do
+  case "$1" in
+    -n|--name|--jobname) name_filter="$2"; shift 2 ;;
+    --name=*|--jobname=*) name_filter="${1#*=}"; shift ;;
+    -u|--user) user_filter="$2"; shift 2 ;;
+    --user=*) user_filter="${1#*=}"; shift ;;
+    --me) user_filter="$(fs_user)"; shift ;;
+    -s|--signal) signal="$2"; shift 2 ;;
+    --signal=*) signal="${1#*=}"; shift ;;
+    -s*) signal="${1#-s}"; shift ;;
+    -q|--quiet) quiet=1; shift ;;
+    -v|--verbose|-b|--batch|-f|--full|-i|--interactive|-H|--hurry) shift ;;
+    -t|--state|-p|--partition|-w|--nodelist|-M|--clusters|-A|--account|-R|--reservation|--wckey|-q*) shift 2 ;;
+    -V|--version) echo "slurm $FAKE_SLURM_VERSION"; exit 0 ;;
+    --help|--usage) echo "Usage: scancel [-s SIGNAL] [-n name] [-u user] [job_id ...]"; exit 0 ;;
+    -*) fs_die "scancel: unrecognized option '$1'" ;;
+    *) ids+=("${1%%.*}"); shift ;;   # strip step id (1234.0)
+  esac
+done
+
+if (( ${#ids[@]} == 0 )) && [[ -z "$name_filter" && -z "$user_filter" ]]; then
+  fs_die "scancel: error: No job identification provided"
+fi
+
+# expand filters into ids
+if (( ${#ids[@]} == 0 )); then
+  for id in $(fs_all_job_ids); do
+    d=$(fs_jobdir "$id")
+    if [[ -n "$name_filter" && "$(fs_meta_get "$d" name)" != "$name_filter" ]]; then continue; fi
+    if [[ -n "$user_filter" && "$(fs_meta_get "$d" user)" != "$user_filter" ]]; then continue; fi
+    st=$(fs_read "$d/state"); case "$st" in PENDING|RUNNING) ids+=("$id") ;; esac
+  done
+fi
+
+sig_num() {  # accept 9, KILL, SIGKILL
+  local s=${1^^}; s=${s#SIG}
+  case "$s" in ''|TERM) echo TERM ;; *) echo "$s" ;; esac
+}
+
+rc=0
+for id in "${ids[@]+"${ids[@]}"}"; do
+  d=$(fs_jobdir "$id")
+  if ! fs_job_exists "$id"; then
+    echo "scancel: error: Kill job error on job id $id: Invalid job id specified" >&2; rc=1; continue
+  fi
+  fs_refresh_job "$d"
+  st=$(fs_read "$d/state")
+  case "$st" in
+    PENDING|RUNNING) ;;
+    *) echo "scancel: error: Kill job error on job id $id: Job/step already completing or completed" >&2; rc=1; continue ;;
+  esac
+  pgid=$(fs_read "$d/child.pgid")
+  pid=$(fs_read "$d/child.pid")
+  if [[ -n "$signal" ]]; then
+    # scancel -s SIG: deliver the signal only; the job decides what to do.
+    s=$(sig_num "$signal")
+    if [[ -n "$pgid" ]]; then kill "-$s" -- "-$pgid" 2>/dev/null || kill "-$s" "$pid" 2>/dev/null || true; fi
+    continue
+  fi
+  fs_write "$d/cancel_requested" "$(fs_now) by $(fs_user)"
+  if [[ "$st" == RUNNING && -n "$pgid" ]]; then
+    kill -TERM -- "-$pgid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+    # Slurm gives the job KillWait (default 30 s) before SIGKILL; ours is
+    # FAKE_SLURM_KILL_WAIT seconds (default 10), escalated in the background.
+    ( sleep "${FAKE_SLURM_KILL_WAIT:-10}"; kill -KILL -- "-$pgid" 2>/dev/null || true ) >/dev/null 2>&1 &
+    disown 2>/dev/null || true
+  fi
+  (( quiet )) || true
+done
+exit "$rc"

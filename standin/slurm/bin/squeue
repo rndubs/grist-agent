@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# Fake squeue (P0.5). Lists jobs from the fake-slurm state dir.
+# Supports -j/--jobs, -u/--user, --me, -n/--name, -p/--partition, -t/--states
+# (incl. "all"), -h/--noheader, -o/--format with %i %j %u %P %t %T %M %l %D %C
+# %N %R %Z %o %S %e %V %A and width specs (%.18i, %10j), -V/--version.
+# Like Slurm, finished jobs stay listed for FAKE_SLURM_MIN_JOB_AGE seconds.
+set -euo pipefail
+here=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
+# shellcheck source=../lib/fake-slurm.sh
+source "$here/../lib/fake-slurm.sh"
+
+jobs_filter=""; user_filter=""; name_filter=""; part_filter=""; states_filter=""
+noheader=0; format='%.18i %.9P %.8j %.8u %.2t %.10M %.6D %R'
+while (($# > 0)); do
+  case "$1" in
+    -j|--jobs|--job) jobs_filter="$2"; shift 2 ;;
+    -j*) jobs_filter="${1#-j}"; shift ;;
+    --jobs=*|--job=*) jobs_filter="${1#*=}"; shift ;;
+    -u|--user|--users) user_filter="$2"; shift 2 ;;
+    -u*) user_filter="${1#-u}"; shift ;;
+    --user=*|--users=*) user_filter="${1#*=}"; shift ;;
+    --me) user_filter="$(fs_user)"; shift ;;
+    -n|--name|--names) name_filter="$2"; shift 2 ;;
+    --name=*|--names=*) name_filter="${1#*=}"; shift ;;
+    -p|--partition|--partitions) part_filter="$2"; shift 2 ;;
+    --partition=*|--partitions=*) part_filter="${1#*=}"; shift ;;
+    -t|--states|--state) states_filter="$2"; shift 2 ;;
+    -t*) states_filter="${1#-t}"; shift ;;
+    --states=*|--state=*) states_filter="${1#*=}"; shift ;;
+    -h|--noheader) noheader=1; shift ;;
+    -o|--format) format="$2"; shift 2 ;;
+    -o*) format="${1#-o}"; shift ;;
+    --format=*) format="${1#*=}"; shift ;;
+    -l|--long) format='%.18i %.9P %.8j %.8u %.8T %.10M %.9l %.6D %R'; shift ;;
+    -a|--all|-r|--array|-v|--verbose|--sort|-S|-i|--iterate|-w|--nodelist|-M|--clusters|-O|--Format)
+      # accepted and ignored (value-taking ones swallow their argument)
+      case "$1" in --sort|-S|-i|--iterate|-w|--nodelist|-M|--clusters|-O|--Format) shift 2 ;; *) shift ;; esac ;;
+    -V|--version) echo "slurm $FAKE_SLURM_VERSION"; exit 0 ;;
+    --help|--usage) echo "Usage: squeue [-j ids] [-u user] [-t states|all] [-h] [-o format]"; exit 0 ;;
+    *) fs_die "squeue: unrecognized option '$1'" ;;
+  esac
+done
+
+states_filter=${states_filter^^}
+now=$(fs_now)
+
+field() {  # field CODE JOBDIR
+  local d="$2" st
+  st=$(fs_read "$d/state")
+  case "$1" in
+    i|A) fs_meta_get "$d" id ;;
+    j) fs_meta_get "$d" name ;;
+    u) fs_meta_get "$d" user ;;
+    P) fs_meta_get "$d" partition ;;
+    a) fs_meta_get "$d" account ;;
+    t) fs_state_code "$st" ;;
+    T) printf '%s' "$st" ;;
+    M) fs_fmt_elapsed "$(fs_job_elapsed "$d")" ;;
+    l) local tl; tl=$(fs_meta_get "$d" time_limit 0); if (( tl == 0 )); then printf 'UNLIMITED'; else fs_fmt_elapsed "$tl"; fi ;;
+    D) fs_meta_get "$d" nodes 1 ;;
+    C) printf '%s' $(( $(fs_meta_get "$d" ntasks 1) * $(fs_meta_get "$d" cpus_per_task 1) )) ;;
+    N) case "$st" in PENDING) printf '' ;; *) printf '%s' "$FAKE_SLURM_NODE" ;; esac ;;
+    R) case "$st" in PENDING) printf '(Priority)' ;; *) printf '%s' "$FAKE_SLURM_NODE" ;; esac ;;
+    Z) fs_meta_get "$d" workdir ;;
+    o) fs_meta_get "$d" script ;;
+    S) local s; s=$(fs_read "$d/start_time"); if [[ -n "$s" ]]; then fs_fmt_timestamp "$s"; else printf 'N/A'; fi ;;
+    e) local e; e=$(fs_read "$d/end_time"); if [[ -n "$e" ]]; then fs_fmt_timestamp "$e"; else printf 'N/A'; fi ;;
+    V) fs_fmt_timestamp "$(fs_meta_get "$d" submit_time)" ;;
+    *) printf '%%%s' "$1" ;;
+  esac
+}
+
+header_for() {
+  case "$1" in
+    i|A) echo JOBID ;; j) echo NAME ;; u) echo USER ;; P) echo PARTITION ;; a) echo ACCOUNT ;;
+    t) echo ST ;; T) echo STATE ;; M) echo TIME ;; l) echo TIME_LIMIT ;; D) echo NODES ;;
+    C) echo CPUS ;; N) echo NODELIST ;; R) echo "NODELIST(REASON)" ;; Z) echo WORK_DIR ;;
+    o) echo COMMAND ;; S) echo START_TIME ;; e) echo END_TIME ;; V) echo SUBMIT_TIME ;; *) echo "" ;;
+  esac
+}
+
+# render FORMAT [JOBDIR]  -- with no JOBDIR renders the header line
+render() {
+  local fmt="$1" d="${2-}" out="" i=0 c spec width left val
+  while (( i < ${#fmt} )); do
+    c=${fmt:i:1}
+    if [[ "$c" != "%" ]]; then out+="$c"; i=$((i+1)); continue; fi
+    i=$((i+1)); left=1; width=""
+    if [[ "${fmt:i:1}" == "." ]]; then left=0; i=$((i+1)); fi
+    while [[ "${fmt:i:1}" =~ [0-9] ]]; do width+="${fmt:i:1}"; i=$((i+1)); done
+    spec=${fmt:i:1}; i=$((i+1))
+    if [[ "$spec" == "%" ]]; then out+="%"; continue; fi
+    if [[ -z "$d" ]]; then val=$(header_for "$spec"); else val=$(field "$spec" "$d"); fi
+    if [[ -n "$width" ]]; then
+      if (( left )); then val=$(printf '%-*s' "$width" "${val:0:$width}"); else val=$(printf '%*s' "$width" "${val:0:$width}"); fi
+    fi
+    out+="$val"
+  done
+  printf '%s\n' "$out"
+}
+
+(( noheader )) || render "$format"
+
+for id in $(fs_all_job_ids); do
+  d=$(fs_jobdir "$id")
+  [[ -f "$d/meta" ]] || continue
+  fs_refresh_job "$d"
+  st=$(fs_read "$d/state")
+  if [[ -n "$jobs_filter" ]]; then fs_in_list "$id" "$jobs_filter" || continue; fi
+  if [[ -n "$user_filter" ]]; then fs_in_list "$(fs_meta_get "$d" user)" "$user_filter" || continue; fi
+  if [[ -n "$name_filter" ]]; then fs_in_list "$(fs_meta_get "$d" name)" "$name_filter" || continue; fi
+  if [[ -n "$part_filter" ]]; then fs_in_list "$(fs_meta_get "$d" partition)" "$part_filter" || continue; fi
+  if [[ -n "$states_filter" && "$states_filter" != ALL ]]; then
+    fs_in_list "$st" "$states_filter" || fs_in_list "$(fs_state_code "$st")" "$states_filter" || continue
+  elif [[ -z "$states_filter" ]]; then
+    case "$st" in
+      PENDING|RUNNING) ;;
+      *) end=$(fs_read "$d/end_time" 0); (( now - end <= FAKE_SLURM_MIN_JOB_AGE )) || continue ;;
+    esac
+  fi
+  render "$format" "$d"
+done

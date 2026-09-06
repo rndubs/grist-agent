@@ -1,0 +1,8 @@
+#!/bin/sh
+# Default epilog for the compose `slurm` service: append one line per finished
+# job to $FAKE_SLURM_STATE_DIR/epilog.log so tests (and, later, the P3.4 waker
+# spike) can see that the hook fired. Override with STANDIN_SLURM_EPILOG.
+printf '%s job=%s name=%s state=%s exit=%s stdout=%s\n' \
+  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SLURM_JOB_ID" "$SLURM_JOB_NAME" \
+  "$FAKE_SLURM_JOB_STATE" "$SLURM_JOB_EXIT_CODE" "$SLURM_JOB_STDOUT" \
+  >>"${FAKE_SLURM_STATE_DIR:-/tmp}/epilog.log"
