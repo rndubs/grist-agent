@@ -81,7 +81,7 @@ Validates the "one client with quirk flags" decision in §5.
 - [ ] 🧑 LiteLLM proxy with keys: `provider/model` routing works; API key + base URL sourced from config, not hardcoded
 - [x] LiteLLM: reasoning/thinking field behavior for at least one upstream recorded (real LiteLLM 1.100.0 proxy in front of a vLLM-shaped upstream)
 - [x] Structured-output capability probed on both (JSON schema / guided decoding) and recorded as a per-endpoint flag (probe built; cells marked 🧑 until run on real endpoints)
-- [ ] Same client run against the P0.5 llama.cpp stand-in; differences recorded as quirk flags too (wired: `run-against.sh standin` runs in the `standin` CI job; tick when that job is green)
+- [x] Same client run against the P0.5 llama.cpp stand-in; differences recorded as quirk flags too (proven in the opt-in `standin` CI job on PR #2; rows marked `verified (CI)` in `docs/spikes/providers.md` §4)
 - [x] Table of quirk flags needed, feeding the `providers` crate design (P1.5)
 - [x] Write-up: `docs/spikes/providers.md`
 
@@ -110,7 +110,7 @@ Per D18 and D9. Everything agents need to run integration tests without GPUs, cl
 - [ ] LiteLLM proxy container routing `stand-in/<model>` to it
 - [x] Fake `sbatch` / `squeue` / `scancel` scripts: run the job in the background, write a Slurm-like log, call the epilog hook on exit (`standin/slurm/`, 55 self-test assertions)
 - [x] Mock in-house solver: a script at a fixed "install path" that consumes an input deck, sleeps, and emits a plausible log with convergence lines, timings, and a controllable failure mode (`standin/solver/`, 33 self-test assertions)
-- [ ] Docker/Podman compose file bringing all four up; **opt-in** CI job (label `ci:standin` or manual, D18 as amended) that runs the P1.5 integration tests against it — stack proven green once on PR #2; tick with P1.5
+- [x] Docker/Podman compose file bringing all four up; **opt-in** CI job (label `ci:standin` or manual, D18 as amended); proven green on PR #2 with the P0.2 client as its first consumer. The P1.5 integration tests plug into the marked hook step when they exist.
 - [x] Environment-gated test tier for real vLLM, real LiteLLM upstreams, and real Slurm, skipped in CI (convention in `docs/standin.md`, `standin/env-gate.sh`; no Rust tests use it yet)
 
 ### Exit criteria — Phase 0
