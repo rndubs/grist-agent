@@ -961,6 +961,12 @@ pub trait Host: Send + Sync {
     async fn ask_user(&self, req: AskUserRequest) -> Result<UserAnswer, HostError>;
 }
 
+/// **[clarified in P1.6]** `host::native` enforces the filesystem policy two-sidedly: both the lexical
+/// normalized path and its symlink-resolved form must pass `FsPolicy::check` (mount paths are resolved
+/// the same way), so a link that points into a mount from outside, or out of a mount from inside, is
+/// denied; relative paths and `..` are `PathDenied`; `remove` acts on the link, not its target. The
+/// program allowlist matches the program string or its basename. `NetDenied` names `host` or `host:port`.
+/// `ChildProcess::wait` counts the timeout from spawn and caches the output for a second call.
 /// PROVIDER-ONLY (D10). Not a supertrait of `Host` on purpose: a `&dyn Host` (what tools and hooks
 /// hold) has no path to a secret value. The launcher hands `Arc<dyn SecretResolver>` to provider
 /// clients only. The `host` crate's native type implements both traits.

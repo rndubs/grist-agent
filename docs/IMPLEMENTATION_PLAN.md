@@ -33,7 +33,7 @@ This file is the single source of truth for progress. Update it in the same PR a
 | Phase | Name | Status | Milestones done | Exit criteria met |
 |---|---|---|---|---|
 | P0 | Spikes (de-risk before design freeze) | in progress | 2 / 6 | no |
-| P1 | Kernel + local daemon | in progress | 3 / 10 (P1.0, P1.1, P1.5) | no |
+| P1 | Kernel + local daemon | in progress | 4 / 10 (P1.0, P1.1, P1.5, P1.6) | no |
 | P2 | Extensions and specialization | not started | 0 / 9 | no |
 | P3 | Provenance and orchestration | not started | 0 / 7 | no |
 | P4 | Evolve loop | not started | 0 / 7 | no |
@@ -191,13 +191,13 @@ Depends on P0.2 / ADR-0003.
 - [x] Token usage from every response recorded into the model call event (D13)
 - [x] Integration tests against the P0.5 stand-in in CI (`crates/providers/tests/standin.rs`, feature `standin-integration`, run by the opt-in `standin` job with `GRIST_REQUIRE_STANDIN=1`); vLLM and LiteLLM tests behind the environment gate (skip when unset)
 
-### P1.6 — `host` crate — `not started`
+### P1.6 — `host` crate — `done`
 
-- [ ] `Host` trait: filesystem, process spawn, network, secrets-as-handles (D10), `ask_user` (D17)
-- [ ] `host::native` implementation
-- [ ] Filesystem operations take a `Policy` and enforce path and mode checks in process; this is how `read`, `write`, `edit` are sandboxed (D5)
-- [ ] `host::remote-client` left as a stub with a documented interface (filled in P3)
-- [ ] Kernel and tools take `&dyn Host`; nothing in `kernel` touches `std::fs` or `std::process` directly
+- [x] `Host` trait: filesystem, process spawn, network, secrets-as-handles (D10), `ask_user` (D17)
+- [x] `host::native` implementation (`NativeHost`, also the `SecretResolver`; `AskUserTool`; `ChannelPrompter`/`NoUserPrompter`)
+- [x] Filesystem operations take a `Policy` and enforce path and mode checks in process; this is how `read`, `write`, `edit` are sandboxed (D5)
+- [x] `host::remote-client` left as a stub with a documented interface (filled in P3)
+- [ ] Kernel and tools take `&dyn Host`; nothing in `kernel` touches `std::fs` or `std::process` directly (ticked with P1.2/P1.7; the kernel's only file I/O is the event log writer, P1.3)
 
 ### P1.7 — `sandbox` crate and base tools — `not started`
 
@@ -592,3 +592,4 @@ From §15 of the dev plan.
 | 2026-09-06 | Model-serving stand-in stack made opt-in in CI (label `ci:standin` / manual); fake Slurm and mock solver self-tests stay on every PR. D18 amended accordingly. |
 | 2026-09-06 | P1.0 specs approved at v0.1; ADR-0001 and ADR-0003 accepted. P1.1 core types landed in `crates/kernel` (in-crate RFC 8785 canonicalizer with `ryu-js`; `serde_json` `float_roundtrip`; `proptest` dev-dependency). Spec clarifications marked **[clarified in P1.1]**: `Net` port rule and host normalization in `narrower_than`; the sandbox envelope excludes `secret:` atoms from `caps`. |
 | 2026-09-06 | P1.5 `providers` landed: one OpenAI-compatible SSE client with `Quirks` from the model profile; 41 unit tests over fake vLLM/LiteLLM/llama.cpp/Hermes shapes; stand-in integration tests behind `standin-integration`, wired into the opt-in CI job. Clarifications recorded in `docs/specs/kernel-interface.md` §3.8 as **[clarified in P1.5]**. |
+| 2026-09-06 | P1.6 `host` landed: `NativeHost` (policy-checked filesystem with symlink resolution, scrubbed-env spawn with SIGTERM→SIGKILL, allowlisted network via reqwest, secrets as handles registered with the redactor on resolve), `AskUserTool` + prompters, `remote-client` stub, endpoint-URL helper; 50 tests. Clarifications recorded in `kernel-interface.md` §3.9 as **[clarified in P1.6]**. |
