@@ -189,6 +189,30 @@ fn args_ok(tc: &ToolCall) -> bool {
     tc.name == "get_weather" && tc.arguments.get("city").and_then(Value::as_str).is_some()
 }
 
+/// Run `f`; on a transport error (connection refused/reset before any response bytes,
+/// as seen when a server closes a keep-alive connection) retry exactly once and record
+/// that it happened in `notes`. HTTP and protocol errors are not retried: they are
+/// observations about the endpoint, not about the connection.
+async fn with_transport_retry<T, F, Fut>(
+    notes: &mut Vec<String>,
+    what: &str,
+    mut f: F,
+) -> Result<T, Error>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<T, Error>>,
+{
+    match f().await {
+        Err(Error::Transport(e)) => {
+            notes.push(format!(
+                "{what}: transport error `{e}`; retried once on a fresh connection"
+            ));
+            f().await
+        }
+        r => r,
+    }
+}
+
 /// Run every scenario and derive the observed quirk row.
 pub async fn run_all(client: &Client) -> ProbeReport {
     let mut scenarios = Vec::new();
@@ -197,7 +221,11 @@ pub async fn run_all(client: &Client) -> ProbeReport {
     let mut reasoning_seen: Vec<String> = Vec::new();
 
     // 1. plain, non-streaming
-    match client.complete(&plain_request(false)).await {
+    match with_transport_retry(&mut notes, "plain", || async {
+        client.complete(&plain_request(false)).await
+    })
+    .await
+    {
         Ok(c) => {
             let ok = !c.response.text.is_empty();
             let detail = format!(
@@ -222,7 +250,11 @@ pub async fn run_all(client: &Client) -> ProbeReport {
     }
 
     // 2. plain, streaming (usage chunk)
-    match client.complete(&plain_request(true)).await {
+    match with_transport_retry(&mut notes, "stream", || async {
+        client.complete(&plain_request(true)).await
+    })
+    .await
+    {
         Ok(c) => {
             let ok = !c.response.text.is_empty();
             observed.supports_stream_usage = c.observed.usage_in_final_chunk;
@@ -253,7 +285,11 @@ pub async fn run_all(client: &Client) -> ProbeReport {
     }
 
     // 3. reasoning capture, streaming
-    match client.complete(&reasoning_request(true)).await {
+    match with_transport_retry(&mut notes, "reasoning", || async {
+        client.complete(&reasoning_request(true)).await
+    })
+    .await
+    {
         Ok(c) => {
             let ok = c.response.thinking.is_some();
             reasoning_seen.extend(c.observed.reasoning_fields_seen.clone());
@@ -278,7 +314,7 @@ pub async fn run_all(client: &Client) -> ProbeReport {
     }
 
     // 4. tool loop, streaming
-    match tool_loop(client, true).await {
+    match with_transport_retry(&mut notes, "tools", || tool_loop(client, true)).await {
         Ok((first, second)) => {
             let called = first.response.tool_calls.iter().any(args_ok);
             let finished = second.as_ref().is_some_and(|s| !s.response.text.is_empty());
@@ -346,36 +382,37 @@ pub async fn run_all(client: &Client) -> ProbeReport {
 
     // 6. structured output. Any determinate outcome is a successful probe:
     // "not supported" is a flag value, not a failure.
-    let structured = match structured_probe(client).await {
-        Ok(o) => {
-            let (flag, word) = match &o {
-                StructuredOutcome::Honored { .. } => (Tri::Yes, "honored"),
-                StructuredOutcome::Error { .. } => (Tri::No, "rejected"),
-                StructuredOutcome::Ignored { .. } => (Tri::No, "ignored"),
-            };
-            observed.supports_structured_output = flag;
-            let detail = format!(
-                "{word}: {}",
-                format!("{o:?}").chars().take(200).collect::<String>()
-            );
-            scenarios.push(ScenarioResult {
-                name: "structured".into(),
-                ok: true,
-                detail,
-                completion: None,
-            });
-            Some(o)
-        }
-        Err(e) => {
-            scenarios.push(ScenarioResult {
-                name: "structured".into(),
-                ok: false,
-                detail: e.to_string(),
-                completion: None,
-            });
-            None
-        }
-    };
+    let structured =
+        match with_transport_retry(&mut notes, "structured", || structured_probe(client)).await {
+            Ok(o) => {
+                let (flag, word) = match &o {
+                    StructuredOutcome::Honored { .. } => (Tri::Yes, "honored"),
+                    StructuredOutcome::Error { .. } => (Tri::No, "rejected"),
+                    StructuredOutcome::Ignored { .. } => (Tri::No, "ignored"),
+                };
+                observed.supports_structured_output = flag;
+                let detail = format!(
+                    "{word}: {}",
+                    format!("{o:?}").chars().take(200).collect::<String>()
+                );
+                scenarios.push(ScenarioResult {
+                    name: "structured".into(),
+                    ok: true,
+                    detail,
+                    completion: None,
+                });
+                Some(o)
+            }
+            Err(e) => {
+                scenarios.push(ScenarioResult {
+                    name: "structured".into(),
+                    ok: false,
+                    detail: e.to_string(),
+                    completion: None,
+                });
+                None
+            }
+        };
 
     // Derive reasoning_field from what was actually seen.
     observed.reasoning_field = match reasoning_seen.first().map(String::as_str) {

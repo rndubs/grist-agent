@@ -59,7 +59,16 @@ impl std::error::Error for Error {}
 impl From<reqwest::Error> for Error {
     fn from(e: reqwest::Error) -> Self {
         // reqwest errors can embed the URL but never headers; still, strip nothing else.
-        Error::Transport(e.without_url().to_string())
+        // Include the source chain: the top-level message is often just "error sending request".
+        let e = e.without_url();
+        let mut msg = e.to_string();
+        let mut src = std::error::Error::source(&e);
+        while let Some(inner) = src {
+            msg.push_str(": ");
+            msg.push_str(&inner.to_string());
+            src = inner.source();
+        }
+        Error::Transport(msg)
     }
 }
 
@@ -72,7 +81,14 @@ pub struct Client {
 
 impl Client {
     pub fn new(endpoint: Endpoint) -> Result<Self, Error> {
-        let mut b = reqwest::Client::builder().connect_timeout(std::time::Duration::from_secs(10));
+        // No idle-connection reuse: llama.cpp (cpp-httplib) closes keep-alive connections
+        // after streamed responses and on a short idle timeout, and reqwest does not retry a
+        // POST that fails on a stale pooled connection ("error sending request"). One fresh
+        // connection per request costs a loopback handshake and removes the flake. P1.5 must
+        // either do the same or retry once on a connection error before any bytes arrive.
+        let mut b = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .pool_max_idle_per_host(0);
         // Loopback endpoints never go through a proxy, whatever HTTPS_PROXY says.
         if endpoint.base_url.contains("127.0.0.1") || endpoint.base_url.contains("localhost") {
             b = b.no_proxy();
