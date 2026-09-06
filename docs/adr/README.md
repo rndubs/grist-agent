@@ -8,3 +8,4 @@ Copy `0000-template.md`, number sequentially, and add a row here.
 |---|---|---|
 | 0000 | Template | n/a |
 | 0001 | Out-of-process tool mechanism (process JSON-RPC over WASM), recording the D8 tier split | proposed |
+| 0003 | Provider client shape: one OpenAI-compatible client with quirk flags | proposed |

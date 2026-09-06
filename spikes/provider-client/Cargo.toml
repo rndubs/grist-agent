@@ -1,0 +1,27 @@
+# P0.2 provider spike. Throwaway: standalone package, NOT a member of the root
+# workspace (the root Cargo.toml excludes `spikes/`; the empty [workspace] table
+# below stops cargo from walking up and attaching to it).
+[package]
+name = "provider-spike"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.94"
+publish = false
+
+[[bin]]
+name = "provider-spike"
+path = "src/main.rs"
+
+[dependencies]
+axum = "0.8"
+bytes = "1"
+clap = { version = "4", features = ["derive"] }
+futures-util = "0.3"
+# reqwest 0.13: default features = rustls TLS + system proxy (honours HTTPS_PROXY / NO_PROXY).
+reqwest = { version = "0.13", features = ["json", "stream"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "net", "process", "signal"] }
+toml = "1"
+
+[workspace]

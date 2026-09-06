@@ -1,0 +1,13 @@
+# Human-run vLLM endpoint. Server must be started with
+#   --enable-auto-tool-choice --tool-call-parser <hermes|llama3_json|...> --reasoning-parser <deepseek_r1|qwen3|...>
+# Otherwise set tool_format = "parsed:hermes" style overrides below (see docs/spikes/providers.md).
+base_url = "http://127.0.0.1:8000/v1"
+model = "Qwen/Qwen3-8B"
+preset = "vllm"
+# api_key_env = "GRIST_VLLM_API_KEY"   # only if the server was started with --api-key
+
+[quirks]
+# Any field of the Quirks struct overrides the preset, e.g.:
+# reasoning_field = "reasoning_content"     # none | reasoning_content | reasoning | provider_specific_fields | inline_think | auto
+# tool_format = "native"                    # or { parsed = "hermes" }
+# supports_structured_output = "yes"        # yes | no | unknown
