@@ -267,7 +267,7 @@ Payoff: "why is this mesh 2 mm?" resolves to a checkpoint whose reasoning trace,
 - **Placement** is an orchestrator decision: `local`, `podman`, or a named `runner` (e.g., a cluster login node with the filesystem mounted). Run near the data. The first target is rootless Podman on the HPC login node (D18); the opt-in CI stand-in (fake `sbatch` + epilog, mock solver, llama.cpp behind LiteLLM) stands in for it in CI.
 - **Wakers** resume suspended agents: Slurm epilog, file watcher, cron/self-schedule, inbound webhook. Each source maps to an outer-sandbox trust tier. Phase 1 ships only the in-kernel process-exit waker (D1).
 - **Agent-to-agent messaging** uses the same protocol; external agentic systems are wrapped as tools that return `Task` handles, so a slow collaborator looks exactly like a slow solver.
-- **UI**: Tauri app whose web frontend is intended to also serve as the remote daemon's browser UI once websocket transport is unbacklogged (D11). ACP is evaluated as the wire format in P1.9; ADR-0004 records adopt / extend / own-schema-with-ACP-shim.
+- **UI**: ADR-0004 (accepted) adopts ACP v2 as the wire format, so the first client is an off-the-shelf ACP editor (Zed) reached through the `grist-connect` stdio↔socket forwarder. The Tauri app — whose web frontend is intended to also serve as the remote daemon's browser UI once websocket transport is unbacklogged (D11) — moves to P3, where that transport and a purpose-built fleet view are actually in scope.
 
 ---
 
@@ -302,7 +302,7 @@ The research consensus is sobering: evolved harnesses overfit dev sets, regress 
 - `kernel`, `providers`, `host::native`, event log, checkpoints, suspend/resume, record/replay, `diff-logs`.
 - Six base tools — `read`, `write`, `edit` (in-process Host path checks), `bash` (Stateless), `run_script` returning a `Task` with the in-kernel process-exit waker (D1), Python REPL as a `Session` tool — all under the inner policy.
 - Profiles (model + agent, TOML), bundles, validator, catalog, one default agent.
-- Minimal protocol server (stdio kernel + unix-socket supervisor, D4/D11); CLI-less: a thin Tauri UI or ACP-compatible editor as client (ADR-0004). *Not started.*
+- Minimal protocol server (stdio kernel + unix-socket supervisor, D4/D11); CLI-less: ACP v2 with Zed as the first client (ADR-0004, accepted). *Not started.*
 - Exit: a coding session and a "run a script, suspend, resume on completion" session both replay deterministically from the log (`diff-logs`, D16); a session reaches `failed` on provider exhaustion and resumes from its checkpoint; `schema_version` migrations exercised; `kernel` soft-frozen (D12). *Status: the first three and the migration criterion are met; the soft freeze is a human decision at phase exit, after P1.9. The bwrap-backed tests of P1.7 await a host with `bwrap`.*
 
 **Phase 2 — Extensions and specialization**
@@ -350,14 +350,14 @@ v0.2: the provider-shape question (one client with quirk flags vs. one client pe
 ## 15. Open questions
 
 1. ~~Extension mechanism (WASM components vs. process-RPC vs. scripting)~~ — **decided, ADR-0001**: process JSON-RPC over stdio; WASM in reserve.
-2. Wire protocol: adopt ACP, extend it, or define our own JSON-RPC schema and provide an ACP shim? — P1.9 / ADR-0004 decides.
+2. ~~Wire protocol: adopt ACP, extend it, or define our own JSON-RPC schema and provide an ACP shim?~~ — **decided, ADR-0004**: adopt ACP v2 on both legs, with a `_grist/*` extension namespace for the log-facing event kinds and the `Tool`/`Task` cancel scopes; Zed is the first client and the Tauri shell moves to P3.
 3. Memory module interface: how much of ALMA's search space (schema + retrieval + update code) do we expose vs. constrain?
 4. Provenance store at fleet scale: Postgres alone, or a graph layer on top for PROV queries?
 5. How aggressively should sub-agent capability pruning be automated vs. proposed-for-review?
 6. Which simulation eval set do we author first, and who owns its hidden half? (D19 fixes the mechanism — a private repo mounted only into the eval runner's sandbox, owned by a named person; the set and the person are still open.)
 7. Sandbox stack on the HPC login node — **still open, ADR-0002 pending** the P0.1 login-node run (§8).
 
-Decided since v0.1 and no longer open: provider client shape (ADR-0003, §5); the process model, transport, and secrets handling (D4, D10, D11, §3, §11).
+Decided since v0.1 and no longer open: provider client shape (ADR-0003, §5); the wire protocol and the first client (ADR-0004, §11, §13); the process model, transport, and secrets handling (D4, D10, D11, §3, §11).
 
 ---
 

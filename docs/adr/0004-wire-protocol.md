@@ -1,6 +1,8 @@
 # ADR-0004: Wire protocol for the daemon and the first client
 
-- **Status:** proposed (draft for review; nothing implemented)
+- **Status:** accepted (2026-09-06). Drafted as `proposed`; the maintainer read the draft, stated no
+  strong preference on the four open questions, and delegated them to the author, who resolved
+  them as recorded below. Nothing is implemented yet — P1.9 does that.
 - **Date:** 2026-09-06
 - **Milestone:** P1.9 (see `docs/IMPLEMENTATION_PLAN.md`); resolves open question §15.2 of the dev plan
 
@@ -144,7 +146,7 @@ complete vocabulary for a turn and an incomplete one for a session's record.
    suspend/resume/task semantics; costs a bespoke client in P1.9 (the Tauri shell, on
    three platforms) and a second protocol to keep in sync forever.
 
-## Decision (proposed)
+## Decision
 
 **Option 1, with three qualifications.**
 
@@ -229,26 +231,79 @@ the session-id → process map, process spawn and reaping, and the decision from
 `Suspension.in_process_wakers` about whether a suspended kernel process stays alive
 (`kernel-interface.md` §3.15).
 
-## Open questions for the reviewer
+## Resolutions of the four open questions
 
-1. **v1 or v2?** v2 is a better fit (`session/resume` with replay, idle state, message
-   ids) but its transports page still carries a draft; v1 is what most existing clients
-   shipped first. P1.9 should confirm what Zed and JetBrains negotiate today before
-   committing.
-2. **Which client is blessed** for the P1.9 exit demonstration, and is a documented
-   editor configuration acceptable as "the first client"?
-3. **Is deferring the Tauri shell to P3 acceptable**, given the dev plan describes it
-   as the eventual browser UI for the remote daemon (§11)?
-4. **Does `_grist/event` leak anything** it should not? It carries redacted events, but
-   it hands a client the whole log; the alternative is a filtered subset chosen per
-   event kind.
+These were left open in the draft and are decided here.
+
+### 1. Target ACP **v2**, with a v1 handshake only if the SDK makes it cheap
+
+Version support is a hard compatibility gate, not a soft one: the client sends the
+latest version it supports, an agent that cannot serve it **MUST** answer with the
+latest *it* supports, and a client that gets back a different number **SHOULD** close
+the connection and tell the user. There is no partial credit.
+
+v2 is chosen because four of its additions are things we would otherwise have had to
+invent in `_grist/*`: `session/resume` with `replayFrom` is our log replay; required
+message ids let a message be replaced, which is exactly what the redactor's
+`late_redaction` case needs; the idle state update is our `Idle`/`Suspended`
+distinction; and `session/list` + `session/close` are what the supervisor's id → process
+map needs anyway.
+
+P1.9 starts by checking what Zed and the JetBrains plugin actually negotiate. If they
+still speak v1 and `agent-client-protocol` does not make serving both versions cheap,
+ship v1 first and treat v2 as a follow-on — the decision above is about the *model* we
+build to, and the `_grist/*` namespace is unaffected by the version either way.
+
+### 2. The blessed client is **Zed**, with a JetBrains IDE as the second known-good
+
+Zed is official, runs on Windows, macOS and Linux (D14), is the protocol's reference
+implementation, and accepts a custom agent as a settings entry:
+
+```json
+{ "agent_servers": { "grist": { "type": "custom", "command": "grist-connect", "args": ["--socket", "~/.grist/daemon.sock"], "env": {} } } }
+```
+
+`grist-connect` is the stdio↔socket forwarder from the decision above, so the blessed
+client needs no code of ours at all. **The P1.9 exit demonstration is:** that snippet
+checked into `docs/`, a session started from Zed against the supervisor's socket, a
+tool call executed under the sandbox backend, an `ask_user` round trip, a cancel, and a
+resume after suspend — all of it visible in the session log.
+
+### 3. The Tauri shell is **deferred to P3**
+
+P1.9's deliverable is the protocol server; the dev plan already allowed "a thin Tauri UI
+*or* an ACP-compatible editor" (§13), and the app's second purpose — the browser UI for
+the remote daemon (§11) — depends on the websocket transport that D11 backlogs pending
+the security team. Building it in P1.9 means building it against a transport we do not
+have. Consequence, recorded openly: until our own client exists, everything only it can
+express (per-tool cancel, task navigation, checkpoint browsing) lives in `_grist/*` with
+no UI in front of it. If that becomes painful before P3, the answer is a small ACP
+client of our own, not a second protocol.
+
+### 4. `_grist/event` carries the **whole redacted stream, opt-in, per session**
+
+The events are post-redaction (D10) and are the same bytes the log already holds; any
+client that reaches the socket has passed the peer-credential check and, running as the
+same uid, can read the session's `.jsonl` file directly. A per-kind allowlist in the
+protocol would therefore buy no confidentiality while creating a second, drifting
+definition of "what a client may see" — and it would break the projection property that
+motivated the notification in the first place.
+
+So: a client receives nothing until it subscribes (`_grist/subscribe{sessionId, kinds?}`),
+the subscription is scoped to one session, and `kinds` is a bandwidth filter, not a
+security control. **The security boundary is the socket** — file permissions plus the
+peer-credential check (D11) — and it stays there. If a genuinely lower-trust reader
+appears later (a shared web UI over the backlogged websocket transport), it gets a
+purpose-built filtered projection service, not a narrowed `_grist/event`.
 
 ## Sources
 
 - ACP overview, initialization, prompt turn, session setup and transports:
   `https://agentclientprotocol.com/protocol/{overview,initialization,prompt-turn}`,
   `.../protocol/v2/{session-setup,transports,overview}`, retrieved 2026-09-06.
+- Version negotiation rules: `https://agentclientprotocol.com/protocol/v2/initialization`.
 - Client and agent registry: `https://agentclientprotocol.com/get-started/clients`.
+- Zed custom agent configuration: `https://zed.dev/docs/ai/external-agents`.
 - Repo inputs: `docs/design-decisions.md` (D4, D5, D9, D11, D14, D15, D17),
   `docs/specs/event-schema.md`, `docs/specs/kernel-interface.md` §3.13–§3.16,
   `crates/orchestrator/tests/launcher.rs`, `docs/agent-harness-dev-plan.md` §11, §13, §15.
