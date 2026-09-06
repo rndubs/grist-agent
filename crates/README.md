@@ -48,7 +48,7 @@ These rules are binding. `kernel` enforces its own rule with a test
 | `host` | Trait impls for filesystem, process spawn, network, secrets, UI prompts: `native`, `remote-client` | No | P1.6, P3.3 |
 | `ext` | Extension API + first-party extensions: MCP client, sub-agent spawn, skills, memory modules, workflow runner, Python REPL tool, capability gate | Extensions yes; API no | P2.x |
 | `profiles` | Loading/merging/validating model profiles, agent profiles, project overrides; catalog; bundles | Content yes; loader no | P1.8 |
-| `sandbox` | Inner bwrap policy derivation from capability declarations; backends; launchers | Policy yes; enforcement no | P1.7 |
+| `sandbox` | Turns a `kernel::SandboxPolicy` (derived in `kernel` from capability atoms) into bwrap invocations; backends (`bwrap`, dev-only `none`); Stateless and Session launchers; the six base tools until P2.1 | Policy yes; enforcement no | P1.7 |
 | `orchestrator` | Placement, wakers, fleet, agent-to-agent messaging, trust tiers | No | P1.9 (seed), P3.3–P3.7 |
 | `provenance` | Event-log projector → relational PROV schema; artifact store | Schema no | P2.5, P3.1–P3.2 |
 | `evolve` | Outer loop: proposer harness, eval runner, promotion gates | Yes (it's a profile too) | P4 |

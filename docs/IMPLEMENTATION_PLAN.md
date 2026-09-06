@@ -94,12 +94,12 @@ Scope narrowed by D8: middleware and first-party tools are compiled Rust; this s
 - [x] Score both against: authorability by the agent at runtime without a recompile, sandbox compatibility under P0.1's inner bwrap, state persistence across calls, latency per call, packaging and distribution
 - [x] Write-up: `docs/spikes/extension-mechanism.md`
 
-### P0.4 — Decisions and design freeze — `in progress` 🧑 (ADR-0001 and ADR-0003 accepted 2026-09-06; ADR-0002 waits on the P0.1 login-node run; dev-plan bump and the P1 freeze are the human's)
+### P0.4 — Decisions and design freeze — `in progress` 🧑 (ADR-0001 and ADR-0003 accepted and the dev plan bumped to v0.2 on 2026-09-06; ADR-0002 waits on the P0.1 login-node run; the P1 freeze declaration is the human's)
 
 - [x] **ADR-0001** Out-of-process tool mechanism (from P0.3), recording the D8 tier split — accepted 2026-09-06
 - [ ] **ADR-0002** Sandbox stack on the HPC login node and fallback (from P0.1)
 - [x] **ADR-0003** Provider client shape: one OpenAI-compatible client with quirk flags (from P0.2) — accepted 2026-09-06
-- [ ] Update the dev plan (§3, §4, §8, §11) with anything the spikes changed and with D1–D20; bump to v0.2
+- [x] Update the dev plan (§3, §4, §8, §11) with anything the spikes changed and with D1–D20; bump to v0.2 (2026-09-06; §5, §6, §13–§15 refreshed too; the specs are named as the normative surface)
 - [ ] 🧑 Freeze the crate list and the `kernel` public surface for P1
 
 ### P0.5 — CI stand-in stack — `in progress` (fake Slurm and mock solver tested locally; container pieces authored and wired into the `standin` CI job, which must go green once before they are ticked)
@@ -527,7 +527,7 @@ Checked at every phase boundary.
 - [x] `docs/adr/` index current (ADR-0001 and ADR-0003 accepted; ADR-0002 and ADR-0004 pending)
 - [x] `docs/specs/` kept in step with the code; a spec change and its implementation land in the same PR (every P1.x clarification is marked **[clarified in P1.x]** in the spec that owns it)
 - [x] Each crate has a `README.md` stating its responsibility and whether the evolve loop may mutate it (§3.1 table)
-- [ ] Dev plan revised at each phase exit (v0.2 after P0 — done with the P1 wave; v0.3 after P1, …)
+- [ ] Dev plan revised at each phase exit (v0.2 after P0 — done; v0.3 after P1, …)
 
 ---
 
@@ -602,3 +602,4 @@ From §15 of the dev plan.
 | 2026-09-06 | P1.4 record/replay landed in `crates/kernel/src/replay/`: `Cassette` (the log is the cassette), `Recorder` at 990, `ReplayProvider`, `ReplayTool` with the driver's checkpoint tracker, `ReplayDriver`, `diff_logs` and the `diff-logs` binary; 28 tests. Two kernel-shape additions recorded in `kernel-interface.md` §3.6 as **[clarified in P1.4]**: `ToolResult::Replayed(ToolOutput)` and `ToolOutput.in_process_waker`. |
 | 2026-09-06 | Phase 1 exit criteria 1, 2, 3 and 5 met by tests in `crates/orchestrator/tests/exit_criteria.rs` and the kernel migration tests; the soft freeze (criterion 4) waits on P1.9 and the human. |
 | 2026-09-06 | Launcher-path test over the shipped `profiles/` tree (`crates/orchestrator/tests/launcher.rs`); `orchestrator → profiles` recorded as a dev edge. Risk register: secrets, middleware ordering, and profile-structure risks marked mitigated. README status refreshed. |
+| 2026-09-06 | Dev plan bumped to v0.2 (D1–D20, ADR-0001/0003, spike outcomes folded in; specs named normative). PR #3 opened with the `ci:standin` label. |
