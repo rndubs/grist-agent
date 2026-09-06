@@ -33,7 +33,7 @@ This file is the single source of truth for progress. Update it in the same PR a
 | Phase | Name | Status | Milestones done | Exit criteria met |
 |---|---|---|---|---|
 | P0 | Spikes (de-risk before design freeze) | in progress | 2 / 6 | no |
-| P1 | Kernel + local daemon | in progress | 4 / 10 done (P1.0, P1.1, P1.5, P1.6); P1.3, P1.7 landed pending cross-milestone tests | no |
+| P1 | Kernel + local daemon | in progress | 5 / 10 done (P1.0, P1.1, P1.2, P1.5, P1.6); P1.3, P1.7 landed pending cross-milestone tests | no |
 | P2 | Extensions and specialization | not started | 0 / 9 | no |
 | P3 | Provenance and orchestration | not started | 0 / 7 | no |
 | P4 | Evolve loop | not started | 0 / 7 | no |
@@ -150,16 +150,16 @@ Per D20. Agents implement against signatures, not prose. Each spec is reviewed b
 - [x] Hashing module: BLAKE3 over RFC 8785 canonical JSON, prefixed hash strings, `request_hash` and `state_hash` definitions (D3)
 - [x] Unit tests for serde round-trips and hash stability of every core type (`crates/kernel/tests/core_types.rs`; RFC 8785 vectors in `hash`; `Capability` property tests in `capability`)
 
-### P1.2 — The loop — `not started`
+### P1.2 — The loop — `done`
 
-- [ ] Implement the §4.1 loop with async hooks in the stated order, checkpoint after each turn, and the D1 suspension rule
-- [ ] Session state machine per D2, including queued user input at turn boundaries
-- [ ] Cancellation token checked between hooks; running tool receives SIGTERM via the sandbox launcher; `Cancelled` event logged (D15)
-- [ ] Provider retry with backoff on rate limits and server errors; on exhaustion the turn fails and the session enters `failed` with checkpoint intact (D15)
-- [ ] Result spill in the kernel: results over the profile's cap go to `ArtifactStore` and are replaced by `{ handle, head, tail }` (D12)
-- [ ] Ordered middleware chain; the *resolved* chain is written to the event log at run start
-- [ ] Tool registry: the loop can only invoke tools registered at construction (enforcement level 1 of §6)
-- [ ] Loop tests with a fake provider and fake tools: plain turn, tool call turn, multi-tool turn, task started then suspend, task completion injected while running, cancellation mid-tool, retry exhaustion, spill
+- [x] Implement the §4.1 loop with async hooks in the stated order, checkpoint after each turn, and the D1 suspension rule
+- [x] Session state machine per D2, including queued user input at turn boundaries
+- [x] Cancellation token checked between hooks; running tool receives SIGTERM via the sandbox launcher; `Cancelled` event logged (D15)
+- [x] Provider retry with backoff on rate limits and server errors; on exhaustion the turn fails and the session enters `failed` with checkpoint intact (D15)
+- [x] Result spill in the kernel: results over the profile's cap go to `ArtifactStore` and are replaced by `{ handle, head, tail }` (D12)
+- [x] Ordered middleware chain; the *resolved* chain is written to the event log at run start
+- [x] Tool registry: the loop can only invoke tools registered at construction (enforcement level 1 of §6)
+- [x] Loop tests with a fake provider and fake tools: plain turn, tool call turn, multi-tool turn, task started then suspend, task completion injected while running, cancellation mid-tool, retry exhaustion, spill (`crates/kernel/tests/loop_{turns,tasks,cancel,retry,spill,middleware,open,registry}.rs`, 60 tests; the five §6 invariants each have an assertion helper)
 
 ### P1.3 — Event log and checkpoints — `in progress` (log, redactor, checkpoints, restore, and the log-level recovery data path landed with tests; the kernel-level suspend/resume and crash-recovery tests land with P1.2)
 
@@ -197,7 +197,7 @@ Depends on P0.2 / ADR-0003.
 - [x] `host::native` implementation (`NativeHost`, also the `SecretResolver`; `AskUserTool`; `ChannelPrompter`/`NoUserPrompter`)
 - [x] Filesystem operations take a `Policy` and enforce path and mode checks in process; this is how `read`, `write`, `edit` are sandboxed (D5)
 - [x] `host::remote-client` left as a stub with a documented interface (filled in P3)
-- [ ] Kernel and tools take `&dyn Host`; nothing in `kernel` touches `std::fs` or `std::process` directly (ticked with P1.2/P1.7; the kernel's only file I/O is the event log writer, P1.3)
+- [x] Kernel and tools take `&dyn Host`; nothing in `kernel` touches `std::fs` or `std::process` directly (the kernel's only file I/O is the event log writer; `crates/kernel/tests/no_std_fs_process.rs` asserts it)
 
 ### P1.7 — `sandbox` crate and base tools — `in progress` 🧑 (everything landed and tested with the `None` backend; the five `bwrap` tests skip until run on a host with `bwrap` — the login node run that also settles ADR-0002)
 
@@ -595,3 +595,4 @@ From §15 of the dev plan.
 | 2026-09-06 | P1.6 `host` landed: `NativeHost` (policy-checked filesystem with symlink resolution, scrubbed-env spawn with SIGTERM→SIGKILL, allowlisted network via reqwest, secrets as handles registered with the redactor on resolve), `AskUserTool` + prompters, `remote-client` stub, endpoint-URL helper; 50 tests. Clarifications recorded in `kernel-interface.md` §3.9 as **[clarified in P1.6]**. |
 | 2026-09-06 | P1.3 log landed: `FileEventLog` (JSONL, fsync on checkpoints, torn-tail tolerance, seq/session/schema validation), one writer path with the writer-side redaction pass for both logs, restore with hash verification and migrations, log-level recovery tests, the §4.4 redaction corpus and the D10 acceptance test (52 tests). Kernel-level suspend/resume and recovery tests follow P1.2. Clarifications recorded in `event-schema.md` §1 as **[clarified in P1.3]**. |
 | 2026-09-06 | P1.7 `sandbox` landed: `BwrapBackend` (pure `policy_to_args` against the P0.1 inner shape), `NoneBackend` behind `dev-sandbox-none` with a CI-asserted absence from default builds, `JsonRpcSession` (newline JSON-RPC 2.0, SIGTERM→SIGKILL), the six base tools incl. `run_script` (Task + in-process waker future) and the Python REPL; 57 tests, 5 need a bwrap host. Clarifications recorded in `kernel-interface.md` §3.12 as **[clarified in P1.7]**. |
+| 2026-09-06 | P1.2 loop landed in `crates/kernel/src/loop_/`: `Kernel`, `KernelHandle`, the §6 turn with every cancellation check point, the D1/D2 state machines, retry with full jitter, kernel spill, ingress redaction, chain resolution, registry enforcement, in-process waker, `open` with resume/recovery/migration; 60 loop tests. Clarifications recorded in `kernel-interface.md` §7 as **[clarified in P1.2]**. |

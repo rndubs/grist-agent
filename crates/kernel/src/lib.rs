@@ -15,8 +15,8 @@ pub mod content;
 pub mod event;
 pub mod hash;
 pub mod host;
-pub mod loop_;
 pub mod log;
+pub mod loop_;
 pub mod memory;
 pub mod middleware;
 pub mod provider;
@@ -43,7 +43,8 @@ pub use host::{
     HttpRequest, HttpResponse, Metadata, Mount, NetHandle, NetPolicy, ProcPolicy, ProcessOutput,
     SecretHandle, SecretResolver, SecretString, UserAnswer,
 };
-pub use log::{EventLog, EventLogReader, LogError, MemoryEventLog, RestoreError};
+pub use log::{EventLog, EventLogReader, FileEventLog, LogError, MemoryEventLog, RestoreError};
+pub use loop_::{ASK_USER_TOOL_NAME, Kernel, KernelConfig, KernelError, KernelHandle, SessionInit};
 pub use memory::{Memory, MemoryError, MemoryItem, MemoryPointer, MemoryQuery, NoopMemory};
 pub use middleware::{
     ExtensionEvent, ExtensionEventSink, HookContext, Middleware, MiddlewareEntry, MiddlewareError,
