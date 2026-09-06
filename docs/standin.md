@@ -380,6 +380,16 @@ docker compose -f standin/compose.yaml exec slurm bash   # a shell "on the login
 docker compose -f standin/compose.yaml exec -T slurm /opt/fake-slurm/libexec/sbatch-solver-check
 ```
 
+Under Podman the service runs on its own (it has no `depends_on`), which is the cheapest way
+to get smoke part (c) on a macOS host, where the fake Slurm cannot run natively:
+
+```sh
+(cd standin && set -a && source .env && set +a && podman-compose -f compose.yaml up -d --no-deps slurm)
+STANDIN_SLURM_EXEC="podman-compose -f $PWD/standin/compose.yaml exec -T slurm" standin/smoke.sh slurm
+```
+
+Verified on 2026-09-06 with podman-compose 1.6.0 against Podman 6.1.1: all part (c) checks pass.
+
 ## CI jobs
 
 Two jobs in `.github/workflows/ci.yml`:

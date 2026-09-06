@@ -113,6 +113,33 @@ fn mounts_map_to_binds_most_specific_last() {
 }
 
 #[test]
+fn scratch_tmpfs_precedes_the_policy_mounts_so_a_mount_under_tmp_wins() {
+    // bwrap applies operations in argv order: a `--tmpfs /tmp` after `--bind /tmp/x /tmp/x`
+    // would hide the bind. Found on the first bwrap host, where tempdirs live under /tmp.
+    let policy = support::policy(
+        &[
+            (Path::new("/tmp/work-abc"), FsMode::Rw),
+            (Path::new("/opt/tools"), FsMode::Ro),
+        ],
+        Duration::from_secs(10),
+    );
+    let args = args_of(&policy, &cmd());
+    let tmpfs = window(&args, &["--tmpfs", "/tmp"]).expect("tmpfs");
+    let under_tmp = window(&args, &["--bind", "/tmp/work-abc", "/tmp/work-abc"]).expect("bind");
+    let other = window(&args, &["--ro-bind", "/opt/tools", "/opt/tools"]).expect("ro opt");
+    let base = window(&args, &["--ro-bind", "/", "/"]).expect("base");
+    assert!(
+        base < tmpfs,
+        "the base image is bound before the scratch tmpfs"
+    );
+    assert!(
+        tmpfs < under_tmp,
+        "a policy mount under /tmp comes after the tmpfs"
+    );
+    assert!(tmpfs < other, "every policy mount comes after the tmpfs");
+}
+
+#[test]
 fn tmpfs_is_sized_in_bytes_before_the_tmpfs_flag() {
     let mut policy = support::policy(&[], Duration::from_secs(10));
     policy.scratch_tmpfs_mb = 256;

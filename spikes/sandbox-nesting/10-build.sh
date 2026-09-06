@@ -3,7 +3,7 @@ set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd); mkdir -p "$here/results"
 log="$here/results/$(hostname -s)-$(date +%Y%m%d).log"
 exec > >(tee -a "$log") 2>&1
-echo "=== 10-build $(date -Is) ==="
+echo "=== 10-build $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
 IMG=${IMG:-localhost/grist-bwrap-spike:latest}
 # Site flags per D18.
 set -x

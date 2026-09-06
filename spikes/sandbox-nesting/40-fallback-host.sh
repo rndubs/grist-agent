@@ -5,7 +5,7 @@ set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd); mkdir -p "$here/results" "$here/work"
 log="$here/results/$(hostname -s)-$(date +%Y%m%d).log"
 exec > >(tee -a "$log") 2>&1
-echo "=== 40-fallback-host $(date -Is) ==="
+echo "=== 40-fallback-host $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
 # Same shape as outer.sh but binding the spike's work dir to /work.
 outer() {
   bwrap --unshare-user --unshare-pid --unshare-ipc --unshare-uts \

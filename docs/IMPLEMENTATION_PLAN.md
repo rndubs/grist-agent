@@ -33,7 +33,7 @@ This file is the single source of truth for progress. Update it in the same PR a
 | Phase | Name | Status | Milestones done | Exit criteria met |
 |---|---|---|---|---|
 | P0 | Spikes (de-risk before design freeze) | in progress | 2 / 6 | no |
-| P1 | Kernel + local daemon | in progress | 8 / 10 done (P1.0–P1.6, P1.8); P1.7 landed, bwrap tests need a host; P1.9 not started | 4 / 5 (soft freeze is a 🧑 decision at exit) |
+| P1 | Kernel + local daemon | in progress | 9 / 10 done (P1.0–P1.8); P1.9 not started | 4 / 5 (soft freeze is a 🧑 decision at exit) |
 | P2 | Extensions and specialization | not started | 0 / 9 | no |
 | P3 | Provenance and orchestration | not started | 0 / 7 | no |
 | P4 | Evolve loop | not started | 0 / 7 | no |
@@ -57,7 +57,7 @@ Dependency order is strict between phases (P0 → P1 → P2 → P3 → P4 → P5
 - [x] ADR template at `docs/adr/0000-template.md`; ADR index in `docs/adr/README.md`
 - [x] `CONTRIBUTING.md` stating the kernel-boundary rule, the tick-on-merge convention, and that `design-decisions.md` is binding
 
-### P0.1 — Sandbox nesting spike on the HPC login node — `in progress` 🧑 (scripts and write-up template ready in `spikes/sandbox-nesting/`; every run below needs the login node)
+### P0.1 — Sandbox nesting spike on the HPC login node — `in progress` 🧑 (scripts and write-up template ready in `spikes/sandbox-nesting/` and rehearsed once under a local rootless Podman machine on 2026-09-06, which fixed four script bugs and added the `unmask` / `label-disable` variants; every run below still needs the login node, and nothing from the rehearsal counts)
 
 Risk addressed: *bwrap won't nest in rootless Podman* (§14). Target per D18: rootless Podman on the HPC login node under the site's constrained uid map.
 
@@ -199,9 +199,9 @@ Depends on P0.2 / ADR-0003.
 - [x] `host::remote-client` left as a stub with a documented interface (filled in P3)
 - [x] Kernel and tools take `&dyn Host`; nothing in `kernel` touches `std::fs` or `std::process` directly (the kernel's only file I/O is the event log writer; `crates/kernel/tests/no_std_fs_process.rs` asserts it)
 
-### P1.7 — `sandbox` crate and base tools — `in progress` 🧑 (everything landed and tested with the `None` backend; the five `bwrap` tests skip until run on a host with `bwrap` — the login node run that also settles ADR-0002)
+### P1.7 — `sandbox` crate and base tools — `done` (the five `bwrap` tests pass on a real bwrap host as of 2026-09-06: a Debian bookworm container under a rootless Podman machine, bwrap 0.8.0, kernel 7.1.8. That host is not the HPC login node, so P0.1 and ADR-0002 are untouched; if the login-node run picks a different inner shape, the `policy_to_args` mapping is what changes)
 
-Depends on P0.1 / ADR-0002.
+Depends on P0.1 / ADR-0002 for the *final* inner shape; the mapping is one pure function and is re-verified by the same five tests on whatever host ADR-0002 names.
 
 - [x] `SandboxBackend` trait with `Bwrap` and `None` implementations; `None` compiles only under a `dev-sandbox-none` feature and is logged in every run (D14)
 - [x] Inner policy type: mounts (RW/RO), tmpfs scratch, network on/off + allowlist, timeout, scrubbed environment (D10)
@@ -210,7 +210,7 @@ Depends on P0.1 / ADR-0002.
 - [x] Base tools: `read`, `write`, `edit` (in-process via Host policy checks), `bash` (Stateless, bwrap)
 - [x] `run_script` tool returning a `Task`, plus the in-kernel process-exit waker that completes it (D1)
 - [x] Python REPL as a `Session` tool per ADR-0001, inside the inner sandbox
-- [x] Tests: `fs.ro` tool cannot write (`tools::write_under_a_read_only_policy_is_denied`, and `bwrap::fs_ro_mount_refuses_a_write_and_rw_allows_it` 🧑 bwrap host); tool without `net` cannot open a socket (`bwrap::network_off_cannot_open_a_socket` 🧑 bwrap host); timeout enforced (`none_backend::timeout_is_enforced_and_the_process_is_gone`, `session::per_call_timeout_kills_the_process`); tool env contains no API key (`none_backend::none_env_scrubbed`, `policy_args::env_is_scrubbed_to_the_allowlist_with_home_forced`); `run_script` future yields the exit outcome without polling (`tools::sandboxed::run_script_returns_a_task_and_the_future_yields_the_exit_outcome`); the kernel-level suspend/resume cycle completes without polling in context (`crates/orchestrator/tests/exit_criteria.rs::run_script_session_suspends_and_the_process_exit_waker_resumes_it`)
+- [x] Tests: `fs.ro` tool cannot write (`tools::write_under_a_read_only_policy_is_denied`, and `bwrap::fs_ro_mount_refuses_a_write_and_rw_allows_it`, passing on a bwrap host); tool without `net` cannot open a socket (`bwrap::network_off_cannot_open_a_socket`, passing on a bwrap host); timeout enforced (`none_backend::timeout_is_enforced_and_the_process_is_gone`, `session::per_call_timeout_kills_the_process`); tool env contains no API key (`none_backend::none_env_scrubbed`, `policy_args::env_is_scrubbed_to_the_allowlist_with_home_forced`); `run_script` future yields the exit outcome without polling (`tools::sandboxed::run_script_returns_a_task_and_the_future_yields_the_exit_outcome`); the kernel-level suspend/resume cycle completes without polling in context (`crates/orchestrator/tests/exit_criteria.rs::run_script_session_suspends_and_the_process_exit_waker_resumes_it`)
 
 ### P1.8 — `profiles` crate and catalog — `done`
 
@@ -538,7 +538,7 @@ Maps §14 risks, plus two surfaced in review, to the milestones that mitigate th
 | Risk | Mitigating milestones | Status |
 |---|---|---|
 | Extension mechanism chosen wrong | D8, P0.3, P0.4 (ADR-0001), P2.1 | open |
-| bwrap won't nest in rootless Podman under the login node's 2002-uid map | P0.1, P0.4 (ADR-0002), P1.7 | open |
+| bwrap won't nest in rootless Podman under the login node's 2002-uid map | P0.1, P0.4 (ADR-0002), P1.7 | open (P1.7's inner shape is verified under bwrap on 2026-09-06, and the nested spike chain passed on a local rootless Podman machine only with `VARIANT=label-disable,unmask`; the site's uid map, kernel and SELinux policy are still untested) |
 | In-house tools unavailable to agents and CI | D9, P0.5 mocks, spill handler behind an interface (P2.5) | open |
 | Kernel feature creep | P0.0 (CONTRIBUTING), P1.0 specs, D12 freeze schedule, boundary track | open (specs and boundary tests in place; the soft freeze is declared at P1 exit) |
 | Profiles overriding structure | P1.8 validator (D7) | mitigated (kernel-only keys, layer-3 forbidden keys, and widening all rejected with tests) |
@@ -607,3 +607,5 @@ From §15 of the dev plan.
 | 2026-09-06 | **ADR-0004 drafted** (`docs/adr/0004-wire-protocol.md`, status proposed): ACP evaluated against D4, D11, D15, D17, the 28 event kinds and the "Windows/macOS/Linux, no CLI" client requirement. Proposal is to adopt ACP v2 on both legs (unix socket to the supervisor, stdio to the one-session kernel), carry the twelve log-facing event kinds and the `Tool`/`Task` cancel scopes in a `_grist/*` extension namespace, and make the first client an off-the-shelf ACP editor with a stdio↔socket forwarder instead of a bespoke Tauri shell. Not accepted; P1.9 is still `not started`. |
 | 2026-09-06 | First green `ci:standin` run of the P1.5 hook step (PR #4, run 34017081578): stack up, smoke all checks passed, P0.2 spike rows, and `GRIST_REQUIRE_STANDIN=1 cargo test -p providers --features standin-integration` → 5 passed against the pinned images. The `standin` job's P1.5 hook is now proven end to end, not just wired. |
 | 2026-09-06 | **ADR-0004 accepted**: adopt ACP v2 on both legs (unix socket to the supervisor, stdio to the one-session kernel), `_grist/*` for the twelve log-facing event kinds and the `Tool`/`Task` cancel scopes, `grist-connect` as the stdio↔socket forwarder, Zed as the blessed first client with the Tauri shell deferred to P3, and `_grist/event` as an opt-in per-session subscription whose security boundary is the socket (D11), not a per-kind filter. The maintainer delegated the four open questions; the resolutions are recorded in the ADR. Open question §15.2 is closed; P1.9's first box ticks with this PR.
+| 2026-09-06 | **P1.7 done.** The five `bwrap` tests were run for the first time on a real bwrap host: a Debian bookworm container (rust 1.94.1, bubblewrap 0.8.0, Python 3.11.2) under a rootless Podman 6.1.1 machine (Fedora CoreOS, kernel 7.1.8-200.fc44.aarch64, crun 1.29.1, SELinux enforcing; the container needed `--security-opt label=disable --security-opt unmask=ALL` for the inner `--proc` mount). First run: 3 / 5, both failures `bwrap: Can't chdir to /tmp/.tmpXXXX: No such file or directory`, a real bug in `policy_to_args`: the scratch `--tmpfs /tmp` came after the policy mounts and shadowed a mount under `/tmp`. Fixed by emitting the tmpfs before the mounts (`bwrap.rs`, README table, new pure test `policy_args::scratch_tmpfs_precedes_the_policy_mounts_so_a_mount_under_tmp_wins`); second run 5 / 5, and `cargo test --workspace --all-features` in the same container: 384 passed, 0 failed, with clippy and fmt clean. A container inside a Podman machine is a legitimate host for these assertions (read-only mount refuses a write, no-net cannot open a socket, timeout kills the process, env scrubbed, PID 1-ish session survives SIGTERM→SIGKILL) but it is **not** the HPC site: P0.1 and ADR-0002 are unchanged and still need the login node. |
+| 2026-09-06 | P0.1 spike scripts rehearsed end to end under the same local Podman machine, purely to debug them; no results recorded in `docs/spikes/sandbox-nesting.md`. Fixed: GNU-only `date -Is`; `VARIANT=keep-ns` was unrunnable (`--userns` and `--uidmap` are mutually exclusive) and now replaces the site map; new composable `unmask` and `label-disable` variants (both were needed on this host: Podman's masked `/proc` paths give EPERM on the inner `--proc`, SELinux gives EACCES first); the inner battery's pid-namespace check counted `/proc` entries from a forking command substitution and now checks `$$`; `results/` and `work/` git-ignored. With `VARIANT=label-disable,unmask` steps 10–40 all PASS locally. Smoke part (c) also run inside the compose `slurm` service via `podman-compose` (all checks passed), closing the one smoke part that cannot run natively on macOS. |
