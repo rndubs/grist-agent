@@ -130,6 +130,8 @@ pub fn registry_for(workdir: &Path) -> Registry {
         capabilities: caps,
     };
     let tools = BTreeMap::from([
+        // D17: the host's question tool needs no atom.
+        ("ask_user".to_owned(), decl(ToolKind::Stateless, vec![])),
         (
             "read".to_owned(),
             decl(ToolKind::Stateless, vec![ro.clone()]),

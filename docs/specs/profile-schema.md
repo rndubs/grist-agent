@@ -427,7 +427,7 @@ file = "default.role.md"
 grants = ["fs.rw:${workdir}", "proc:bash", "proc:python3"]
 
 [tools]
-allow = ["read", "write", "edit", "bash", "run_script", "python"]
+allow = ["read", "write", "edit", "bash", "run_script", "python", "ask_user"]
 
 [skills]
 paths = ["${workdir}/.grist/skills"]

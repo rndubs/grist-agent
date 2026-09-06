@@ -1,0 +1,20 @@
+{
+  "agent_servers": {
+    "grist": {
+      "type": "custom",
+      "command": "grist-connect",
+      "args": ["--socket", "~/.grist/daemon.sock"],
+      "env": {}
+    },
+    "grist-local": {
+      "type": "custom",
+      "command": "grist-kernel",
+      "args": [],
+      "env": {
+        "GRIST_PROFILES_DIR": "/path/to/grist-agent/profiles",
+        "GRIST_ENDPOINT_LITELLM_CI_URL": "http://127.0.0.1:4000/v1",
+        "LITELLM_CI_API_KEY": "sk-replace-me"
+      }
+    }
+  }
+}
