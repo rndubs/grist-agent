@@ -1,0 +1,7 @@
+# `large_enum_variant` fires on the size *difference* between variants (default 200 bytes).
+# Since P1.9 the ACP SDK (`agent-client-protocol`) turns on serde_json's `preserve_order`, which
+# cargo unifies across the workspace and which makes every `serde_json::Value` bigger; five
+# untouched kernel enums that carry a `Value` (`ResumeCause`, `ToolFlow`, `ReplayInput`, and two
+# private ones) crossed the default threshold. Boxing them would change public kernel types for
+# a lint, so the threshold is raised instead. Recorded in the plan's change log (2026-09-06).
+enum-variant-size-threshold = 512

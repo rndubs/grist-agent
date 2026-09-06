@@ -54,11 +54,12 @@ fn shipped_default_agent_resolves() {
     let w = workdir.to_string_lossy();
     let k = &r.kernel_inputs;
 
-    // Grants: the three declared atoms plus the six derived tool atoms, sorted.
+    // Grants: the three declared atoms plus the seven derived tool atoms, sorted.
     let expected: Vec<Capability> = [
         format!("fs.rw:{w}"),
         "proc:bash".into(),
         "proc:python3".into(),
+        "tool:ask_user".into(),
         "tool:bash".into(),
         "tool:edit".into(),
         "tool:python".into(),
@@ -78,6 +79,7 @@ fn shipped_default_agent_resolves() {
             "fs.rw:${workdir}",
             "proc:bash",
             "proc:python3",
+            "tool:ask_user",
             "tool:bash",
             "tool:edit",
             "tool:python",
@@ -88,7 +90,15 @@ fn shipped_default_agent_resolves() {
     );
     assert_eq!(
         k.tools,
-        ["bash", "edit", "python", "read", "run_script", "write"]
+        [
+            "ask_user",
+            "bash",
+            "edit",
+            "python",
+            "read",
+            "run_script",
+            "write"
+        ]
     );
 
     // Chain: only the kernel's recorder.

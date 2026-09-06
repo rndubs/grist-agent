@@ -6,24 +6,47 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish.workspace = true
-description = "Placement, wakers, fleet, agent-to-agent messaging, trust tiers."
+description = "Placement, wakers, fleet, agent-to-agent messaging, trust tiers. P1.9 seed: the launcher, the ACP protocol server (`grist-kernel` over stdio, `grist-daemon` over a unix socket) and the `grist-connect` forwarder."
 
 [dependencies]
 kernel.workspace = true
-
-# Phase 1 exit-criteria sessions (crates/orchestrator/tests/exit_criteria.rs) drive a real kernel
-# with the host, sandbox, and profiles crates; these are the `orchestrator → sandbox, host,
-# profiles` edges of crates/README.md, used as dev-dependencies until the P1.9 launcher and
-# P3.3 use them for real.
-[dev-dependencies]
+# P1.9 launcher and protocol server (crates/README.md: orchestrator → host, sandbox, profiles, providers).
 host.workspace = true
+sandbox.workspace = true
 profiles.workspace = true
-toml.workspace = true
-sandbox = { workspace = true, features = ["dev-sandbox-none"] }
-tokio.workspace = true
+providers.workspace = true
+tokio = { workspace = true, features = ["io-std"] }
+tokio-util.workspace = true
+futures.workspace = true
+serde.workspace = true
 serde_json.workspace = true
+thiserror.workspace = true
 async-trait.workspace = true
+toml.workspace = true
+agent-client-protocol.workspace = true
+uuid.workspace = true
+nix = { workspace = true, features = ["user"] }
+
+[dev-dependencies]
 tempfile.workspace = true
+# The exit-criteria and launcher tests drive a real kernel with the `None` backend (D14).
+sandbox = { workspace = true, features = ["dev-sandbox-none"] }
+
+[features]
+# D14: lets the launcher select the `none` sandbox backend (development builds only).
+dev-sandbox-none = ["sandbox/dev-sandbox-none"]
+
+[[bin]]
+name = "grist-kernel"
+path = "src/bin/grist_kernel.rs"
+
+[[bin]]
+name = "grist-daemon"
+path = "src/bin/grist_daemon.rs"
+
+[[bin]]
+name = "grist-connect"
+path = "src/bin/grist_connect.rs"
 
 [lints]
 workspace = true

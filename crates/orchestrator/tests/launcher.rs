@@ -4,13 +4,12 @@
 //! create the kernel, and run a turn. This is what proves the in-repo default agent, the
 //! validator, and the tools agree on names and capabilities.
 
-use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use ::host::{MapSecretSource, NativeHost};
-use ::profiles::{KernelInputs, Registry, ResolveInputs, ToolDecl, resolve};
-use ::sandbox::{NoneBackend, base_tools, tool_decls};
+use ::profiles::{KernelInputs, Registry, ResolveInputs, resolve};
+use ::sandbox::{NoneBackend, base_tools};
 use async_trait::async_trait;
 use kernel::log::FileEventLog;
 use kernel::*;
@@ -23,19 +22,10 @@ fn profiles_dir() -> PathBuf {
         .unwrap()
 }
 
-/// The registry the real launcher builds from the compiled tools and middleware of this build.
+/// The registry the real launcher builds from the compiled tools and middleware of this build
+/// (`orchestrator::launcher::registry`: the six base tools plus `ask_user`).
 fn registry(workdir: &Path) -> Registry {
-    Registry {
-        tools: tool_decls(workdir)
-            .into_iter()
-            .map(|(name, kind, capabilities)| (name, ToolDecl { kind, capabilities }))
-            .collect(),
-        middleware: BTreeSet::new(),
-        parsers: BTreeSet::new(),
-        memory_modules: BTreeSet::from(["none".to_owned()]),
-        sandbox_backends: BTreeSet::from(["bwrap".to_owned(), "none".to_owned()]),
-        dev_build: true,
-    }
+    orchestrator::launcher::registry(workdir)
 }
 
 struct OneShot(Mutex<Vec<ModelResponse>>);
@@ -77,11 +67,14 @@ fn kernel_config_from(
     // The profile selects `bwrap`; this CI host has no bwrap, so the launcher substitutes the
     // development backend (D14). A production launcher refuses the substitution.
     let sandbox = Arc::new(NoneBackend::new(host.clone()));
-    let all = base_tools(workdir, sandbox.clone());
+    let mut all = base_tools(workdir, sandbox.clone());
+    // D17: `ask_user` is the host's tool; the launcher adds it next to the sandbox base tools.
+    all.push(Arc::new(::host::AskUserTool::new()));
     let tools: Vec<Arc<dyn Tool>> = all
         .into_iter()
         .filter(|t| inputs.tools.iter().any(|n| n == t.name()))
         .collect();
+    // `ask_user` is the host's tool (D17), not a sandbox base tool; the real launcher adds it.
     assert_eq!(tools.len(), inputs.tools.len(), "every allowed tool exists");
     let middleware = inputs
         .middleware
@@ -144,7 +137,15 @@ async fn shipped_default_agent_resolves_against_the_real_tools_and_runs() {
     assert_eq!(inputs.sandbox_backend, "bwrap");
     assert_eq!(
         inputs.tools,
-        ["bash", "edit", "python", "read", "run_script", "write"]
+        [
+            "ask_user",
+            "bash",
+            "edit",
+            "python",
+            "read",
+            "run_script",
+            "write"
+        ]
     );
     let grants: Vec<String> = inputs.grants.iter().map(|c| c.to_string()).collect();
     assert!(grants.contains(&format!("fs.rw:{}", workdir.display())));
