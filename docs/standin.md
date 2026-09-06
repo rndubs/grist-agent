@@ -342,20 +342,33 @@ docker compose -f standin/compose.yaml exec slurm bash   # a shell "on the login
 docker compose -f standin/compose.yaml exec -T slurm /opt/fake-slurm/libexec/sbatch-solver-check
 ```
 
-## CI job
+## CI jobs
 
-`.github/workflows/ci.yml` → job `standin` (ubuntu-latest, 40 min cap, independent of
-the Rust jobs):
+Two jobs in `.github/workflows/ci.yml`:
+
+**`standin-scripts` — always.** Runs `standin/slurm/test.sh` and `standin/solver/test.sh`
+on the runner. Plain scripts, no containers, no downloads, under a minute.
+
+**`standin` — opt-in.** Downloading a model and serving it on CPU is not something every
+PR should pay for, so this job is gated. It runs only when:
+
+- the PR carries the label **`ci:standin`** (adding the label triggers a run; the
+  workflow listens for `labeled`), or
+- it is started manually from the Actions tab (`workflow_dispatch`, input `standin`).
+
+Add the label on any PR that touches `standin/`, `spikes/provider-client/`, or, later,
+`crates/providers`; remove it when the run is green if you want subsequent pushes to
+skip it. Steps (ubuntu-latest, 40 min cap):
 
 1. `actions/cache@v4` restores `standin/.cache/models` (key from `compose.yaml`'s hash,
    `restore-keys: standin-gguf-`), so the GGUF is downloaded only when the pin changes.
-2. Host self-tests: `standin/slurm/test.sh`, `standin/solver/test.sh`.
-3. `standin/up.sh` with a per-run random `LITELLM_MASTER_KEY`; waits for all three
+2. `standin/up.sh` with a per-run random `LITELLM_MASTER_KEY`; waits for all three
    healthchecks (`--wait`).
-4. Exports `STANDIN_OPENAI_BASE_URL`, `STANDIN_LITELLM_BASE_URL`, `STANDIN_LITELLM_KEY`,
+3. Exports `STANDIN_OPENAI_BASE_URL`, `STANDIN_LITELLM_BASE_URL`, `STANDIN_LITELLM_KEY`,
    `STANDIN_MODEL` into `$GITHUB_ENV`.
-5. `standin/smoke.sh` — parts (a), (b), (c) above.
-6. `standin/env-gate.sh --require standin`.
+4. `standin/smoke.sh` — parts (a), (b), (c) above.
+5. `standin/env-gate.sh --require standin`.
+6. The P0.2 provider spike: `spikes/provider-client/run-against.sh standin`.
 7. **P1.5 hook**: the step named `Provider integration tests (P1.5 hook)` currently
    echoes the exported variables. When `crates/providers` lands, replace the echo
    with the real command (suggested: a `standin-integration` cargo feature or a test
@@ -422,10 +435,11 @@ current shell can reach and `--require` turns that into an exit code for scripts
 ## Status and open items
 
 - Fake Slurm and mock solver: implemented and covered by tests that run on any
-  Linux host (and in CI before the stack starts).
-- Compose stack, LiteLLM routing, tool calling, SSE: authored and lint-checked;
-  proven by the `standin` CI job (the authoring environment had no container
-  runtime and no Hugging Face access).
+  Linux host and in the always-on `standin-scripts` CI job.
+- Compose stack, LiteLLM routing, tool calling, SSE, structured output: proven by the
+  first `standin` CI run on PR #2 (2026-09-06); see `docs/spikes/providers.md` §2.3.
+  The job is opt-in (label `ci:standin` or manual) so ordinary PRs never download or
+  serve a model.
 - The P1.5 integration tests and the P3.4 waker test plug into the marked CI step.
 - Model choice: Qwen2.5-1.5B is the tool-calling pin; a reasoning-capable swap
   (Qwen3) is documented above but not exercised in CI.

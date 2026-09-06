@@ -110,7 +110,7 @@ Per D18 and D9. Everything agents need to run integration tests without GPUs, cl
 - [ ] LiteLLM proxy container routing `stand-in/<model>` to it
 - [x] Fake `sbatch` / `squeue` / `scancel` scripts: run the job in the background, write a Slurm-like log, call the epilog hook on exit (`standin/slurm/`, 55 self-test assertions)
 - [x] Mock in-house solver: a script at a fixed "install path" that consumes an input deck, sleeps, and emits a plausible log with convergence lines, timings, and a controllable failure mode (`standin/solver/`, 33 self-test assertions)
-- [ ] Docker/Podman compose file bringing all four up; CI job that runs the P1.5 integration tests against it
+- [ ] Docker/Podman compose file bringing all four up; **opt-in** CI job (label `ci:standin` or manual, D18 as amended) that runs the P1.5 integration tests against it — stack proven green once on PR #2; tick with P1.5
 - [x] Environment-gated test tier for real vLLM, real LiteLLM upstreams, and real Slurm, skipped in CI (convention in `docs/standin.md`, `standin/env-gate.sh`; no Rust tests use it yet)
 
 ### Exit criteria — Phase 0
@@ -589,3 +589,4 @@ From §15 of the dev plan.
 | 2026-09-06 | Adversarial review; twenty decisions recorded in `design-decisions.md` and folded in. Added P0.5 CI stand-in stack, P1.0 interface specs, Backlog section, human-required markers. |
 | 2026-09-06 | P0.0 repository foundations landed: workspace, nine stub crates, DAG, CI, toolchain pin (1.94.1, MSRV 1.94), `CONTRIBUTING.md`. |
 | 2026-09-06 | P0.3 done (process JSON-RPC recommended, ADR-0001 drafted). P0.2 client + write-up + ADR-0003 draft; real endpoints remain 🧑. P0.5 fake Slurm and mock solver tested; containers and CI job authored, pending first green run. P0.1 spike scripts ready for the login node. P1.0 specs drafted at v0.1 and reconciled, awaiting review. |
+| 2026-09-06 | Model-serving stand-in stack made opt-in in CI (label `ci:standin` / manual); fake Slurm and mock solver self-tests stay on every PR. D18 amended accordingly. |

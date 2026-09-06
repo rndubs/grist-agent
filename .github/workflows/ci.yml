@@ -2,8 +2,16 @@ name: CI
 
 on:
   pull_request:
+    # `labeled` so that adding the `ci:standin` label starts the opt-in stack job.
+    types: [opened, synchronize, reopened, labeled]
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      standin:
+        description: "Run the opt-in stand-in stack job (downloads and serves a model)"
+        type: boolean
+        default: true
 
 env:
   CARGO_TERM_COLOR: always
@@ -60,8 +68,22 @@ jobs:
   # Independent of the Rust jobs. This is where the P1.5 provider integration
   # tests and the P3.4 waker test run; see docs/standin.md.
   # ---------------------------------------------------------------------------
+  standin-scripts:
+    name: fake Slurm + mock solver self-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: standin/slurm/test.sh
+      - run: standin/solver/test.sh
+
+  # OPT-IN. Pulls two container images and a ~1 GB GGUF and serves a model on CPU.
+  # It does not run on ordinary pushes or PRs. Start it by adding the `ci:standin`
+  # label to the PR, or from the Actions tab (workflow_dispatch). See docs/standin.md.
   standin:
-    name: stand-in stack (llama.cpp + LiteLLM + fake Slurm)
+    name: stand-in stack (opt-in; llama.cpp + LiteLLM + fake Slurm)
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.standin) ||
+      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'ci:standin'))
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -76,11 +98,6 @@ jobs:
           key: standin-gguf-${{ hashFiles('standin/compose.yaml') }}
           restore-keys: |
             standin-gguf-
-
-      - name: Fake Slurm and mock solver self-tests (host)
-        run: |
-          standin/slurm/test.sh
-          standin/solver/test.sh
 
       - name: Start the stack
         run: |
