@@ -234,6 +234,7 @@ Open question §15.2 (wire protocol) is decided here.
 - [ ] Remote use documented as an SSH-forwarded unix socket; no websocket in this phase (D11)
 - [ ] First client: either a thin Tauri shell or an ACP-compatible editor, whichever ADR-0004 makes cheaper; must run on Windows, macOS, and Linux (D14). No CLI (§13, "CLI-less")
 - [ ] Every protocol message maps to or from an `Event`; no protocol-only state
+- [ ] Launcher: `profiles::KernelInputs` → `KernelConfig` + `SessionInit` (reference shape in `crates/orchestrator/tests/launcher.rs`), backend selection by `sandbox_backend` (refuse `none` outside dev builds), endpoint URL via `host::endpoint_url_from_env`, provider from `Quirks`, model-profile `tool_descriptions` applied by wrapping the compiled tools' definitions
 
 ### Exit criteria — Phase 1
 
@@ -523,10 +524,10 @@ Checked at every phase boundary.
 
 ### Documentation
 
-- [ ] `docs/adr/` index current
-- [ ] `docs/specs/` kept in step with the code; a spec change and its implementation land in the same PR
+- [x] `docs/adr/` index current (ADR-0001 and ADR-0003 accepted; ADR-0002 and ADR-0004 pending)
+- [x] `docs/specs/` kept in step with the code; a spec change and its implementation land in the same PR (every P1.x clarification is marked **[clarified in P1.x]** in the spec that owns it)
 - [x] Each crate has a `README.md` stating its responsibility and whether the evolve loop may mutate it (§3.1 table)
-- [ ] Dev plan revised at each phase exit (v0.2 after P0, v0.3 after P1, …)
+- [ ] Dev plan revised at each phase exit (v0.2 after P0 — done with the P1 wave; v0.3 after P1, …)
 
 ---
 
@@ -539,13 +540,13 @@ Maps §14 risks, plus two surfaced in review, to the milestones that mitigate th
 | Extension mechanism chosen wrong | D8, P0.3, P0.4 (ADR-0001), P2.1 | open |
 | bwrap won't nest in rootless Podman under the login node's 2002-uid map | P0.1, P0.4 (ADR-0002), P1.7 | open |
 | In-house tools unavailable to agents and CI | D9, P0.5 mocks, spill handler behind an interface (P2.5) | open |
-| Kernel feature creep | P0.0 (CONTRIBUTING), P1.0 specs, D12 freeze schedule, boundary track | open |
-| Profiles overriding structure | P1.8 validator (D7) | open |
+| Kernel feature creep | P0.0 (CONTRIBUTING), P1.0 specs, D12 freeze schedule, boundary track | open (specs and boundary tests in place; the soft freeze is declared at P1 exit) |
+| Profiles overriding structure | P1.8 validator (D7) | mitigated (kernel-only keys, layer-3 forbidden keys, and widening all rejected with tests) |
 | Checkpoint schema drift | P1.1 `schema_version` + migration hook, schema versioning track | mitigated (P1.1 hook + test); retire at P1 exit |
-| Secrets in the archive | D10: P1.3 redactor, P1.6 handles, P1.7 scrubbed env | open |
+| Secrets in the archive | D10: P1.3 redactor, P1.6 handles, P1.7 scrubbed env | mitigated (all three landed with tests: secret never in the file, handles never expose values, sandbox env scrubbed) |
 | Evolve loop overfits / optimizes noise | P4.2 hidden sets (D19) + baseline, P4.3 gates, P4 exit constructed rejection (D16) | open |
 | Fine-tune / harness drift | P5.1 trained-against hash + warning | open |
-| Middleware ordering bugs | P1.2 resolved chain logged per run; D7 priority slots | open |
+| Middleware ordering bugs | P1.2 resolved chain logged per run; D7 priority slots | mitigated (chain logged and same-order hooks tested in P1.2; validator ranges tested in P1.8) |
 | Workflow DSL creep | P3.6 guardrail | open |
 | Context flooding from MCP | P2.2 lazy exposure, kernel spill (D12), P2.6 compaction, P2.9 budget | open |
 | Agent writes its own pedigree | P3.1 mechanical emission, P3 exit test | open |
@@ -600,3 +601,4 @@ From §15 of the dev plan.
 | 2026-09-06 | Phase 1 exit-criteria sessions added in `crates/orchestrator/tests/exit_criteria.rs` (real kernel + `NativeHost` + `None` backend + base tools + file log): coding session recorded, `run_script` suspend/waker/resume recorded, provider exhaustion → `failed` → resume proven. The `orchestrator → sandbox, host` edges are used as dev-dependencies for these tests. |
 | 2026-09-06 | P1.4 record/replay landed in `crates/kernel/src/replay/`: `Cassette` (the log is the cassette), `Recorder` at 990, `ReplayProvider`, `ReplayTool` with the driver's checkpoint tracker, `ReplayDriver`, `diff_logs` and the `diff-logs` binary; 28 tests. Two kernel-shape additions recorded in `kernel-interface.md` §3.6 as **[clarified in P1.4]**: `ToolResult::Replayed(ToolOutput)` and `ToolOutput.in_process_waker`. |
 | 2026-09-06 | Phase 1 exit criteria 1, 2, 3 and 5 met by tests in `crates/orchestrator/tests/exit_criteria.rs` and the kernel migration tests; the soft freeze (criterion 4) waits on P1.9 and the human. |
+| 2026-09-06 | Launcher-path test over the shipped `profiles/` tree (`crates/orchestrator/tests/launcher.rs`); `orchestrator → profiles` recorded as a dev edge. Risk register: secrets, middleware ordering, and profile-structure risks marked mitigated. README status refreshed. |

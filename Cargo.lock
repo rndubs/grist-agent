@@ -667,10 +667,12 @@ dependencies = [
  "async-trait",
  "host",
  "kernel",
+ "profiles",
  "sandbox",
  "serde_json",
  "tempfile",
  "tokio",
+ "toml",
 ]
 
 [[package]]

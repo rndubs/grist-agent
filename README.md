@@ -11,13 +11,18 @@ A minimal, embeddable, self-improvable agent kernel for simulation and engineeri
 
 ## Status
 
-Phase 0 (spikes) is in progress: P0.0 and P0.3 are done; P0.2 and P0.5 are built and wait on CI and human-run endpoints; P0.1 waits on the HPC login node. The three P1.0 interface specs are drafted under `docs/specs/` and await human review. See the progress summary at the top of the implementation plan.
+Phase 1 (kernel + local daemon) is nearly complete: the kernel (`crates/kernel`: types, loop, event log, record/replay), `providers`, `host`, `sandbox` with the six base tools, and `profiles` with the in-repo default agent under `profiles/` have landed with their tests, and four of the five Phase 1 exit criteria are met by end-to-end sessions in `crates/orchestrator/tests/`. P1.9 (protocol server and first client) is next. Phase 0 items that need the HPC login node (P0.1, ADR-0002) or real model endpoints (P0.2) remain with their human owners. See the progress summary at the top of the implementation plan.
+
+The specs under `docs/specs/` are the normative surface: `kernel-interface.md` (types, traits, loop semantics), `event-schema.md` (envelope, event kinds, hashes, redaction, replay), `profile-schema.md` (TOML profiles, bundles, validator).
 
 ## Building
 
 ```
 cargo build --workspace
-cargo test --workspace
+cargo test --workspace --all-features
+cargo clippy --workspace --all-targets --all-features -- -D warnings
 ```
+
+`--all-features` enables the `None` sandbox backend (`dev-sandbox-none`, development builds only, D14) that the integration tests use where `bwrap` is unavailable, and the opt-in provider integration tests (`standin-integration`, which read the `STANDIN_*` variables of `docs/standin.md`).
 
 The toolchain is pinned in `rust-toolchain.toml`. See `CONTRIBUTING.md` for the rules and `crates/README.md` for the crate layout.
