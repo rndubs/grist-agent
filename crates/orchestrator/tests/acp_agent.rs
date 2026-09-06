@@ -272,6 +272,21 @@ fn log_kinds(launch: &LaunchOptions, id: &str) -> Vec<String> {
         .collect()
 }
 
+/// Notifications and the prompt's response travel independently, so what the client has
+/// collected right after a prompt returns may lag by a message or two. Poll briefly.
+async fn eventually(mut cond: impl FnMut() -> bool) -> bool {
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        if cond() {
+            return true;
+        }
+        if std::time::Instant::now() > deadline {
+            return false;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
 fn agent_text(updates: &[SessionUpdate]) -> String {
     updates
         .iter()
@@ -306,6 +321,7 @@ async fn coding_turn_streams_tool_calls_and_text_and_answers_status_and_list() {
             prompt(&cx, &id, "What does hello.txt say?").await,
             StopReason::EndTurn
         );
+        assert!(eventually(|| agent_text(&seen.updates()) == "It says hello.").await);
 
         let updates = seen.updates();
         let tool_call = updates
@@ -409,7 +425,8 @@ async fn ask_user_round_trips_through_elicitation_and_the_event_subscription_see
             prompt(&cx, &id, "Pick a colour for me.").await,
             StopReason::EndTurn
         );
-        assert_eq!(agent_text(&seen.updates()), "You chose blue.");
+        assert!(eventually(|| agent_text(&seen.updates()) == "You chose blue.").await);
+        assert!(eventually(|| seen.event_kinds().iter().any(|k| k == "checkpoint")).await);
         let kinds = seen.event_kinds();
         assert!(kinds.contains(&"ask_user".to_owned()), "{kinds:?}");
         assert!(kinds.contains(&"user_answer".to_owned()), "{kinds:?}");
@@ -456,6 +473,8 @@ async fn subscription_kinds_filter_and_unsubscribed_sessions_get_nothing() {
         .await
         .unwrap();
         assert_eq!(prompt(&cx, &id, "again").await, StopReason::EndTurn);
+        assert!(eventually(|| agent_text(&seen.updates()) == "okok again").await);
+        assert!(eventually(|| seen.event_kinds().iter().any(|k| k == "checkpoint")).await);
         let kinds = seen.event_kinds();
         assert!(!kinds.is_empty());
         assert!(
@@ -508,11 +527,11 @@ async fn session_cancel_stops_the_turn_with_stop_reason_cancelled() {
             prompt(&cx, &id, "take your time").await,
             StopReason::Cancelled
         );
-        assert_eq!(seen.event_kinds(), vec!["cancelled".to_owned()]);
+        assert!(eventually(|| seen.event_kinds() == vec!["cancelled".to_owned()]).await);
         assert!(log_kinds(&launch, &id).contains(&"cancelled".to_owned()));
         // The session is usable afterwards.
         assert_eq!(prompt(&cx, &id, "and now?").await, StopReason::EndTurn);
-        assert!(agent_text(&seen.updates()).ends_with("after"));
+        assert!(eventually(|| agent_text(&seen.updates()).ends_with("after")).await);
         Ok(())
     })
     .await;
@@ -636,7 +655,7 @@ async fn session_load_replays_the_history_and_the_session_continues() {
             prompt(&cx, &id, "Second question?").await,
             StopReason::EndTurn
         );
-        assert_eq!(agent_text(&seen2.updates()), "First answer.Second answer.");
+        assert!(eventually(|| agent_text(&seen2.updates()) == "First answer.Second answer.").await);
         let kinds = log_kinds(&launch, &id);
         assert!(kinds.contains(&"resumed".to_owned()), "{kinds:?}");
         let st = cx
