@@ -1,0 +1,14 @@
+[package]
+name = "proto-a-jsonrpc"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Standalone: keep cargo from attaching this to the root workspace.
+[workspace]
+
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "process", "fs"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+libc = "0.2"

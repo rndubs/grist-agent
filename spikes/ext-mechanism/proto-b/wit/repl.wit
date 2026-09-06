@@ -1,0 +1,23 @@
+package grist:repl@0.1.0;
+
+interface repl {
+  record error-info {
+    kind: string,
+    message: string,
+    traceback: string,
+  }
+  record eval-result {
+    ok: bool,
+    stdout: string,
+    stderr: string,
+    value: option<string>,
+    error: option<error-info>,
+  }
+  eval: func(code: string) -> eval-result;
+  reset: func();
+  info: func() -> string;
+}
+
+world repl-tool {
+  export repl;
+}

@@ -1,0 +1,93 @@
+{
+  "wasmtime_version": "47.0.4",
+  "component_bytes": 19229896,
+  "precompiled_bytes": 36030728,
+  "compile_cold_ms": 3041.996452,
+  "deserialize_precompiled_ms": 3.534227,
+  "instantiate_ms": [
+    1.152613,
+    0.857064,
+    0.748008,
+    0.698993,
+    0.6852940000000001
+  ],
+  "instantiate_median_ms": 0.748008,
+  "first_call_ms": 0.47978499999999996,
+  "guest_python": "3.14.0 (main, Jul  7 2026, 21:37:34) [Clang 22.1.0-wasi-sdk (https://github.com/llvm/llvm-project 4434dabb69916856b82 platform=wasi modules=94",
+  "state_persists": true,
+  "error_structured": {
+    "message": "division by zero",
+    "ok": false,
+    "type": "ZeroDivisionError"
+  },
+  "latency_eval_trivial": {
+    "n": 200,
+    "min_us": 49.002,
+    "p50_us": 54.812000000000005,
+    "p95_us": 93.495,
+    "p99_us": 110.054,
+    "max_us": 203.34300000000002,
+    "mean_us": 61.15311500000005
+  },
+  "latency_info": {
+    "n": 200,
+    "min_us": 1.815,
+    "p50_us": 2.138,
+    "p95_us": 2.54,
+    "p99_us": 5.111,
+    "max_us": 26.148,
+    "mean_us": 2.3714300000000006
+  },
+  "latency_eval_1mb_result": {
+    "n": 20,
+    "min_us": 3573.447,
+    "p50_us": 3755.6040000000003,
+    "p95_us": 4642.749,
+    "p99_us": 4683.956999999999,
+    "max_us": 4683.956999999999,
+    "mean_us": 3899.8199499999996
+  },
+  "cancel": {
+    "total_ms": 501.152446,
+    "trap": "Some(Interrupt)"
+  },
+  "restart_ms": 4.755582,
+  "numpy": {
+    "available": false,
+    "error": "ModuleNotFoundError",
+    "message": "No module named 'numpy'"
+  },
+  "rss_kb_after_instantiate": 351672,
+  "rss_kb_after": 373436,
+  "probe": {
+    "error": null,
+    "value": "{'missing_modules': {'json': 'ModuleNotFoundError', 'statistics': 'ModuleNotFoundError', 'decimal': 'ModuleNotFoundError', 'sqlite3': 'ModuleNotFoundError', 'ssl': 'ModuleNotFoundError', 'socket': 'ModuleNotFoundError', 'subprocess': 'ModuleNotFoundError', 'threading': 'ModuleNotFoundError', 'multiprocessing': 'ModuleNotFoundError', 'ctypes': 'ModuleNotFoundError', 'asyncio': 'ModuleNotFoundError', 'hashlib': 'ModuleNotFoundError', 'struct': 'ModuleNotFoundError', 'pickle': 'ModuleNotFoundError', 'csv': 'ModuleNotFoundError', 'xml.etree.ElementTree': 'ModuleNotFoundError', 'tempfile': 'ModuleNotFoundError', 'pathlib': 'ModuleNotFoundError'}, 'ops': {'open_write_tmp': \"FileNotFoundError: [Errno 44] No such file or directory: '/tmp/p03_probe.txt'\", 'os_getcwd': 'ok', 'os_listdir_root': \"FileNotFoundError: [Errno 44] No such file or directory: '/'\", 'time_sleep_10ms': 'ok', 'subprocess_true': \"ModuleNotFoundError: No module named 'subprocess'\", 'thread_start': \"ModuleNotFoundError: No module named 'threading'\", 'socket_connect': \"ModuleNotFoundError: No module named 'socket'\", 'env': 'ok'}}"
+  },
+  "cpu_sum_squares": {
+    "n": 5,
+    "min_us": 500113.665,
+    "p50_us": 503950.231,
+    "p95_us": 546062.083,
+    "p99_us": 546062.083,
+    "max_us": 546062.083,
+    "mean_us": 512753.0236000001
+  },
+  "cpu_float_loop": {
+    "n": 5,
+    "min_us": 144827.163,
+    "p50_us": 152666.383,
+    "p95_us": 161907.966,
+    "p99_us": 161907.966,
+    "max_us": 161907.966,
+    "mean_us": 151946.37000000002
+  },
+  "cpu_dict_str": {
+    "n": 5,
+    "min_us": 213037.345,
+    "p50_us": 235366.015,
+    "p95_us": 238738.593,
+    "p99_us": 238738.593,
+    "max_us": 238738.593,
+    "mean_us": 230857.31120000003
+  }
+}

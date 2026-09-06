@@ -1,0 +1,89 @@
+{
+  "python": "python3",
+  "python_version": "3.11.15 (main, Mar  3 2026, 09:26:23) [GCC 13.3.0]",
+  "startup_ms": [
+    20.541939,
+    21.347241999999998,
+    22.349777,
+    19.544789,
+    22.237901
+  ],
+  "startup_median_ms": 21.347241999999998,
+  "state_persists": true,
+  "error_structured": {
+    "message": "division by zero",
+    "ok": false,
+    "type": "ZeroDivisionError"
+  },
+  "rpc_error_code": -32601,
+  "latency_ping": {
+    "n": 200,
+    "min_us": 42.092999999999996,
+    "p50_us": 51.941,
+    "p95_us": 73.62299999999999,
+    "p99_us": 88.799,
+    "max_us": 212.876,
+    "mean_us": 55.369165
+  },
+  "latency_eval_trivial": {
+    "n": 200,
+    "min_us": 68.518,
+    "p50_us": 72.766,
+    "p95_us": 93.76599999999999,
+    "p99_us": 218.209,
+    "max_us": 229.528,
+    "mean_us": 78.17303499999998
+  },
+  "latency_eval_1mb_result": {
+    "n": 20,
+    "min_us": 6268.352,
+    "p50_us": 6618.285,
+    "p95_us": 7423.003,
+    "p99_us": 8767.865,
+    "max_us": 8767.865,
+    "mean_us": 6767.6703
+  },
+  "cancel": {
+    "exit": "ExitStatus(unix_wait_status(15))",
+    "kill_took_ms": 0.817844,
+    "signal": 15,
+    "total_ms": 502.090845
+  },
+  "restart_ms": 22.964422000000003,
+  "numpy": {
+    "available": false,
+    "error": "ModuleNotFoundError"
+  },
+  "rss_kb_after": 13460,
+  "probe": {
+    "error": null,
+    "value": "{'missing_modules': {}, 'ops': {'open_write_tmp': 'ok', 'os_getcwd': 'ok', 'os_listdir_root': 'ok', 'time_sleep_10ms': 'ok', 'subprocess_true': 'ok', 'thread_start': 'ok', 'socket_connect': 'ConnectionRefusedError: [Errno 111] Connection refused', 'env': 'ok'}}"
+  },
+  "cpu_sum_squares": {
+    "n": 5,
+    "min_us": 64353.696,
+    "p50_us": 65488.589,
+    "p95_us": 66950.955,
+    "p99_us": 66950.955,
+    "max_us": 66950.955,
+    "mean_us": 65645.6976
+  },
+  "cpu_float_loop": {
+    "n": 5,
+    "min_us": 37239.381,
+    "p50_us": 40132.966,
+    "p95_us": 41771.626,
+    "p99_us": 41771.626,
+    "max_us": 41771.626,
+    "mean_us": 39891.3848
+  },
+  "cpu_dict_str": {
+    "n": 5,
+    "min_us": 103542.251,
+    "p50_us": 106412.598,
+    "p95_us": 117352.545,
+    "p99_us": 117352.545,
+    "max_us": 117352.545,
+    "mean_us": 107980.5874
+  }
+}

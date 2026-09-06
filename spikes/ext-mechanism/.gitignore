@@ -1,0 +1,6 @@
+# Build products of the throwaway spike. The measurements live in results/*.json.
+target/
+.venv/
+*.wasm
+*.cwasm
+__pycache__/
