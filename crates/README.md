@@ -20,8 +20,9 @@ These rules are binding. `kernel` enforces its own rule with a test
    it consumes the others and is consumed by nobody.
 4. Cross-edges between the non-kernel crates are allowed only where the plan
    states them. Currently expected:
-   - `ext` → `sandbox` (out-of-process tools run under the sandbox launchers, P2.1)
+   - `ext` → `sandbox` (out-of-process tools run under the sandbox launchers, and the six base tools are registered through `ext::BaseTools`, P2.1)
    - `orchestrator` → `sandbox`, `host`, `profiles`, `providers` (the P1.9 launcher assembles a `KernelConfig` from `profiles::KernelInputs`: backend from `sandbox`, `NativeHost` and the endpoint URL from `host`, the OpenAI-compatible client from `providers`; later the outer bwrap and the remote host client, P3.3)
+   - `orchestrator` → `ext` (P2.1: the launcher gets compiled tools and middleware from `ext::ExtensionSet` and loads the profile's out-of-process extensions with `ext::load_all`)
    - `evolve` → `provenance`, `profiles`, `orchestrator` (archive, candidates, eval runs, P4)
    - `profiles` → `sandbox` (reserved; P1.8 needed only `kernel::derive_policy_with` and `Capability`, so the edge is not used yet)
    Add a new edge here in the same PR that introduces it.
@@ -48,7 +49,7 @@ These rules are binding. `kernel` enforces its own rule with a test
 | `host` | Trait impls for filesystem, process spawn, network, secrets, UI prompts: `native`, `remote-client` | No | P1.6, P3.3 |
 | `ext` | Extension API + first-party extensions: MCP client, sub-agent spawn, skills, memory modules, workflow runner, Python REPL tool, capability gate | Extensions yes; API no | P2.x |
 | `profiles` | Loading/merging/validating model profiles, agent profiles, project overrides; catalog; bundles | Content yes; loader no | P1.8 |
-| `sandbox` | Turns a `kernel::SandboxPolicy` (derived in `kernel` from capability atoms) into bwrap invocations; backends (`bwrap`, dev-only `none`); Stateless and Session launchers; the six base tools until P2.1 | Policy yes; enforcement no | P1.7 |
+| `sandbox` | Turns a `kernel::SandboxPolicy` (derived in `kernel` from capability atoms) into bwrap invocations; backends (`bwrap`, dev-only `none`); Stateless and Session launchers; the six base tools (registered through `ext::BaseTools` since P2.1) | Policy yes; enforcement no | P1.7 |
 | `orchestrator` | Placement, wakers, fleet, agent-to-agent messaging, trust tiers | No | P1.9 (seed), P3.3–P3.7 |
 | `provenance` | Event-log projector → relational PROV schema; artifact store | Schema no | P2.5, P3.1–P3.2 |
 | `evolve` | Outer loop: proposer harness, eval runner, promotion gates | Yes (it's a profile too) | P4 |
@@ -60,7 +61,9 @@ under its own directory once ADR-0004 picks the wire format.
 
 `profiles/` at the repository root holds the mutable profile content (`catalog.toml`,
 `bundles.toml`, `models/`, `agents/`) that `crates/profiles` loads; `crates/sandbox/src/tools/`
-holds the six base tools (P1.7) until the `ext` API lands in P2.1.
+holds the six base tools (P1.7), which are registered through the `ext` compiled tier
+(`ext::BaseTools`) since P2.1. `examples/` holds example out-of-process extensions
+(`examples/text-stats/`, P2.1).
 
 ## Spikes
 

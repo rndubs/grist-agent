@@ -1,0 +1,26 @@
+# An out-of-process extension (P2.1, ADR-0001; docs/specs/extension-manifest.md).
+# A profile loads it by listing this directory in `[extensions].paths`; its tools are then
+# exposed to the model as `ext.text_stats.count` and `ext.text_stats.top_words`.
+schema_version = 1
+
+[extension]
+name = "text_stats"
+version = "0.1.0"
+description = "Line, word and character counts for text files in the working directory."
+# One process per call (D5). "session" keeps one process for the whole session instead.
+kind = "stateless"
+# `${ext}` is this directory; `${workdir}` the session working directory (also the default cwd).
+command = ["python3", "${ext}/server.py"]
+# What the process needs. A profile whose grants do not cover every atom cannot load the
+# extension. The program in `command` must be declared as a `proc:` atom.
+capabilities = ["fs.ro:${workdir}", "proc:python3"]
+
+[[tools]]
+name = "count"
+description = "Count lines, words and characters in a text file. Paths are relative to the working directory."
+input_schema = { type = "object", properties = { path = { type = "string", description = "File to count." } }, required = ["path"], additionalProperties = false }
+
+[[tools]]
+name = "top_words"
+description = "The most frequent words in a text file (case-insensitive), most frequent first."
+schema_file = "schemas/top_words.json"

@@ -519,7 +519,16 @@ dependencies = [
 name = "ext"
 version = "0.0.0"
 dependencies = [
+ "async-trait",
+ "host",
  "kernel",
+ "sandbox",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "toml",
 ]
 
 [[package]]
@@ -1193,6 +1202,7 @@ version = "0.0.0"
 dependencies = [
  "agent-client-protocol",
  "async-trait",
+ "ext",
  "futures",
  "host",
  "kernel",

@@ -200,6 +200,10 @@ pub struct ResolvedProfile {
     pub mcp_servers: Vec<McpServer>,
     /// `[skills].paths`, symbolic.
     pub skills_paths: Vec<String>,
+    /// `[extensions].paths`, symbolic (P2.1). Omitted from the hashed form when empty, so
+    /// profiles without extensions keep their pre-P2.1 hash.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extensions_paths: Vec<String>,
     /// `[[subagents]]` in file order.
     pub subagents: Vec<Subagent>,
     /// The resolved chain in sorted order, kernel entries included.

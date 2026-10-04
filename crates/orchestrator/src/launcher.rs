@@ -18,6 +18,13 @@
 //!   definitions ([`Described`]); nothing else about a tool changes.
 //! - **`ask_user`** (D17) is the host's tool; it is registered when the agent profile allows it and
 //!   its questions arrive on the [`PendingQuestion`] receiver the caller gets back.
+//! - **Compiled tools** come from the build's [`compiled_extensions`] (the P2.1 `ext` API): the
+//!   six base tools and `ask_user`. The same set supplies the validator's [`registry`].
+//! - **Out-of-process extensions** (P2.1, ADR-0001) are the directories in the profile's
+//!   `[extensions].paths`. Each manifest is admitted only if the profile's grants cover every
+//!   capability it requires; an extension that asks for more fails the launch
+//!   ([`LaunchError::Extension`]). Admitted tools are registered as `ext.<name>.<tool>` and their
+//!   `tool:` atoms join the session grants.
 //!
 //! Session bookkeeping lives under [`LaunchOptions::state_dir`]: `sessions/<id>.jsonl` is the
 //! event log and `sessions/<id>.toml` the [`SessionRecord`] (workdir, agent, overrides) that a
@@ -28,6 +35,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use ext::{Extension, ExtensionSet, Placeholders, SessionSetup};
 use host::{AskUserTool, ChannelPrompter, EnvSecretSource, NativeHost, PendingQuestion};
 use kernel::log::FileEventLog;
 use kernel::{
@@ -197,36 +205,49 @@ pub enum LaunchError {
     /// The kernel refused the configuration or the log.
     #[error(transparent)]
     Kernel(#[from] KernelError),
+    /// An out-of-process extension could not be loaded or exceeds the profile's grants.
+    #[error("extension: {0}")]
+    Extension(#[from] ext::ExtError),
 }
 
-/// The `ask_user` tool's declaration for the registry (D17: capabilities `[]`).
-fn ask_user_decl() -> (String, ToolDecl) {
-    let t = AskUserTool::new();
-    (
-        t.name().to_owned(),
-        ToolDecl {
-            kind: t.kind(),
-            capabilities: t.capabilities(),
-        },
-    )
+/// `ask_user` (D17) as a compiled extension: the tool is the host's, registered through `ext`.
+struct AskUser;
+
+impl Extension for AskUser {
+    fn name(&self) -> &str {
+        "ask_user"
+    }
+
+    fn tools(&self, _setup: &SessionSetup) -> Vec<Arc<dyn Tool>> {
+        vec![Arc::new(AskUserTool::new())]
+    }
 }
 
-/// The registry of what this build compiled in: the six base tools plus `ask_user`, no middleware
-/// or parsers yet, the `none` memory module, and the backends this build can provide.
+/// The compiled extensions of this build: the six base tools and `ask_user`; no middleware yet.
+pub fn compiled_extensions() -> ExtensionSet {
+    ExtensionSet::new()
+        .with(Arc::new(ext::BaseTools))
+        .and_then(|set| set.with(Arc::new(AskUser)))
+        .expect("the compiled extensions have distinct names")
+}
+
+/// The registry of what this build compiled in ([`compiled_extensions`]), the `none` memory
+/// module, and the backends this build can provide.
 pub fn registry(workdir: &Path) -> Registry {
-    let mut tools: BTreeMap<String, ToolDecl> = sandbox::tool_decls(workdir)
+    let set = compiled_extensions();
+    let tools: BTreeMap<String, ToolDecl> = set
+        .tool_decls(workdir)
+        .expect("the compiled tools are valid")
         .into_iter()
         .map(|(name, kind, capabilities)| (name, ToolDecl { kind, capabilities }))
         .collect();
-    let (name, decl) = ask_user_decl();
-    tools.insert(name, decl);
     let mut backends = BTreeSet::from(["bwrap".to_owned()]);
     if cfg!(feature = "dev-sandbox-none") {
         backends.insert("none".to_owned());
     }
     Registry {
         tools,
-        middleware: BTreeSet::new(),
+        middleware: set.middleware_names(),
         parsers: BTreeSet::new(),
         memory_modules: BTreeSet::from(["none".to_owned()]),
         sandbox_backends: backends,
@@ -341,8 +362,11 @@ fn assemble(
     };
 
     // Tools: the compiled set filtered by the profile, descriptions from the model profile.
-    let mut all: Vec<Arc<dyn Tool>> = sandbox::base_tools(workdir, sandbox.clone());
-    all.push(Arc::new(AskUserTool::new()));
+    let compiled = compiled_extensions();
+    let all = compiled.tools(&SessionSetup {
+        workdir: workdir.to_path_buf(),
+        sandbox: sandbox.clone(),
+    })?;
     let mut tools: Vec<Arc<dyn Tool>> = Vec::new();
     for name in &inputs.tools {
         let Some(t) = all.iter().find(|t| t.name() == name) else {
@@ -358,12 +382,38 @@ fn assemble(
             None => t.clone(),
         });
     }
-    if let Some(m) = inputs.middleware.iter().find(|m| m.name != "recorder") {
-        return Err(LaunchError::Config(format!(
-            "profile names middleware `{}` but this build compiles none",
-            m.name
-        )));
+    // Out-of-process extensions (P2.1): admitted against the grants, or the launch fails.
+    let loaded = ext::load_all(
+        &inputs.extension_paths,
+        &Placeholders {
+            workdir,
+            home: &opts.home,
+        },
+        &inputs.grants,
+        &inputs.sandbox_limits,
+    )?;
+    tools.extend(loaded.kernel_tools());
+    let mut grants = inputs.grants.clone();
+    if !loaded.tools.is_empty() {
+        grants.extend(loaded.tool_atoms());
+        grants.sort_by_key(|c| c.to_string());
+        grants.dedup();
     }
+
+    let middleware = inputs
+        .middleware
+        .iter()
+        .filter(|m| m.name != "recorder")
+        .map(|m| {
+            compiled.middleware_entry(
+                &m.name,
+                m.priority,
+                m.source,
+                &m.config,
+                m.config_hash.clone(),
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
 
     // Provider: endpoint URL from the environment, quirks from the model profile.
     let provider: Arc<dyn Provider> = match provider_override {
@@ -404,7 +454,7 @@ fn assemble(
     let (delta_tx, deltas) = broadcast::channel(opts.delta_capacity.max(1));
     let config = KernelConfig {
         tools,
-        middleware: Vec::new(),
+        middleware,
         provider,
         host,
         artifact_store: Arc::new(NoopArtifactStore),
@@ -419,7 +469,7 @@ fn assemble(
         model_id: inputs.model_id.clone(),
         model_params: inputs.model_params.clone(),
         system_prompt: inputs.system_prompt.clone(),
-        grants: inputs.grants.clone(),
+        grants,
         delta_sink: Some(delta_tx),
         event_channel_capacity: 1024,
     };

@@ -336,7 +336,7 @@ grants_resolved = expand_bundles(capabilities.grants)
 |---|---|---|---|
 | `allow` | list of tool names | yes | The tools the kernel instantiates — enforcement level 1 of dev plan §6: the model cannot call what is not registered. Every name MUST be in `Registry.tools` (`E_TOOL_UNKNOWN`). Every capability the tool declares (`Tool::capabilities()`, concrete because tools are constructed with the session workdir) MUST be `narrower_than` some atom in `grants_resolved` (`E_CAP_EXCEEDS_GRANTS`). |
 
-MCP tools (`mcp.<server>.<tool>`) and out-of-process extension tools (`ext.<manifest>.<tool>`, P2.1) are not listed here; they are admitted by their `[[mcp_servers]]` entry or manifest, and their derived `Tool{name}` atoms join `grants_resolved` at registration time (P2.2), which is when their names become known.
+MCP tools (`mcp.<server>.<tool>`) and out-of-process extension tools (`ext.<manifest>.<tool>`, P2.1) are not listed here; they are admitted by their `[[mcp_servers]]` entry or by their manifest named in `[extensions].paths` (§3.12), and their derived `Tool{name}` atoms join the session grants at registration time, which is when their names become known. **[amended in P2.1]** For extensions that is launch time: the launcher adds them to `KernelConfig.grants` after admission (`extension-manifest.md` §4); they are not part of `grants_resolved` or the resolved-profile hash.
 
 ### 3.4 `[[mcp_servers]]` (P2.2)
 
@@ -506,6 +506,14 @@ The tools' declared capabilities (P1.7) and why the grants above suffice:
 
 No `net:` atom, so the default agent has no network (dev plan §8).
 
+### 3.12 `[extensions]` (P2.1) **[amended in P2.1]**
+
+| Key | Type | Meaning |
+|---|---|---|
+| `paths` | list of directory paths | Out-of-process extension directories, each holding an `extension.toml` manifest (`extension-manifest.md` §2). Placeholders allowed; a relative path resolves against the profile file. Loaded in order at session start (create and resume). |
+
+The validator only expands the paths. The launcher loads each manifest and admits it only if every capability it requires is `narrower_than` some atom of `grants_resolved` (§11.4), using the same `derive_policy_with` as the kernel. An extension that asks for more fails the launch with the uncovered atom named (`extension-manifest.md` §4). Admitted tools are registered as `ext.<name>.<tool>` (§11.5). The resolved profile carries the symbolic list as `extensions_paths`, which is omitted from the hashed form when empty, so profiles without extensions keep their hash. Absent from the layer-0 defaults: no extensions.
+
 ---
 
 ## 4. Project overrides
@@ -547,7 +555,7 @@ target = 0.40
 | `agent.name`, `agent.eval_set` | **no** | identity and eval pointers are not steerable from the workdir (D19, P4.4) → `E_OVERRIDE_FORBIDDEN_KEY` |
 | `capabilities.grants` | narrowing only | the list replaces (§6.1) and every atom of the new resolved set MUST be `narrower_than` some atom of the layer-2 resolved set → else `E_OVERRIDE_WIDENS_GRANTS` |
 | `tools.allow` | subset only | derived `tool:` atoms fall under the rule above; the error names the tool |
-| `mcp_servers`, `subagents`, `skills.paths` | yes | lists replace; each entry is bounded by the (possibly narrowed) grants, so nothing here can widen the sandbox |
+| `mcp_servers`, `subagents`, `skills.paths`, `extensions.paths` | yes | lists replace; each entry is bounded by the (possibly narrowed) grants, so nothing here can widen the sandbox |
 | `middleware` | add or override, never remove | entries merge by name (§6.3); priorities MUST stay in 200–899; an entry whose name resolves to a model-profile or kernel slot → `E_PRIORITY_RANGE` |
 | `memory`, `notebook` | yes | values; `notebook.path` still needs an `fs.rw` grant |
 | `sandbox.timeout_s`, `sandbox.scratch_tmpfs_mb` | lower only | `E_OVERRIDE_WIDENS_SANDBOX` |
@@ -856,6 +864,8 @@ pub struct ResolvedProfile {
     pub tools: Vec<String>,            // sorted
     pub mcp_servers: Vec<McpServer>,   // in file order; capabilities expanded+sorted
     pub skills_paths: Vec<String>,     // symbolic
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extensions_paths: Vec<String>, // symbolic; [amended in P2.1], omitted from the hash when empty
     pub subagents: Vec<Subagent>,      // in file order; ceiling expanded+sorted
     pub middleware: Vec<MiddlewareEntry>,  // resolved chain in sorted order, kernel entries included:
                                            // { name, priority, source, config: serde_json::Value }

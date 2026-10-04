@@ -168,6 +168,9 @@ pub struct KernelInputs {
     pub agents_md_path: PathBuf,
     /// Expanded `skills.paths`.
     pub skills_paths: Vec<PathBuf>,
+    /// Expanded `extensions.paths`: out-of-process extension directories (P2.1), loaded and
+    /// admitted against `grants` by the launcher (`ext::load_all`).
+    pub extension_paths: Vec<PathBuf>,
     /// `[[mcp_servers]]` expanded.
     pub mcp_servers: Vec<ResolvedMcpServer>,
     /// `[[subagents]]` expanded.
@@ -261,6 +264,7 @@ struct Stage {
     limits: SandboxLimits,
     agents_md: PathBuf,
     skills: Vec<PathBuf>,
+    extensions: Vec<PathBuf>,
     notebook: PathBuf,
     mcp: Vec<ResolvedMcpServer>,
     subagents: Vec<ResolvedSubagent>,
@@ -453,6 +457,7 @@ pub fn resolve(inputs: &ResolveInputs<'_>) -> Result<Resolved, Vec<Diagnostic>> 
         sandbox_policy_hash,
         agents_md_path: full.agents_md.clone(),
         skills_paths: full.skills.clone(),
+        extension_paths: full.extensions.clone(),
         mcp_servers: full.mcp.clone(),
         subagents: full.subagents.clone(),
         memory: p.memory.clone(),
@@ -589,6 +594,7 @@ fn resolve_entry(
         limits: SandboxLimits::default(),
         agents_md: PathBuf::new(),
         skills: Vec::new(),
+        extensions: Vec::new(),
         notebook: PathBuf::new(),
         mcp: Vec::new(),
         subagents: Vec::new(),
@@ -1088,6 +1094,7 @@ fn build_profile(
             })
             .collect(),
         skills_paths: list_at(t, "skills.paths"),
+        extensions_paths: list_at(t, "extensions.paths"),
         subagents: tables_at(t, "subagents")
             .iter()
             .zip(subs)
@@ -1189,6 +1196,12 @@ fn expand_stage(
         .iter()
         .enumerate()
         .filter_map(|(i, s)| path_of(s, &idx("skills.paths", i), &mut diags))
+        .collect();
+    stage.extensions = p
+        .extensions_paths
+        .iter()
+        .enumerate()
+        .filter_map(|(i, s)| path_of(s, &idx("extensions.paths", i), &mut diags))
         .collect();
     if let Some(es) = &p.agent.eval_set {
         let one = |v: &str, key: &str, diags: &mut Vec<Diagnostic>| -> String {

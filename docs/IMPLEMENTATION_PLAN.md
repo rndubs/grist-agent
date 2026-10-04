@@ -34,7 +34,7 @@ This file is the single source of truth for progress. Update it in the same PR a
 |---|---|---|---|---|
 | P0 | Spikes (de-risk before design freeze) | in progress | 3 / 6 (P0.0, P0.3, P0.5); P0.1, P0.2, P0.4 wait on humans and the login node | 2 / 5 |
 | P1 | Kernel + local daemon | in progress | 9 / 10 done (P1.0–P1.8); P1.9 landed and tested, waiting on the 🧑 Zed session | 4 / 5 (soft freeze is a 🧑 decision at exit) |
-| P2 | Extensions and specialization | not started | 0 / 9 | no |
+| P2 | Extensions and specialization | in progress | 1 / 9 (P2.1) | no |
 | P3 | Provenance and orchestration | not started | 0 / 7 | no |
 | P4 | Evolve loop | not started | 0 / 7 | no |
 | P5 | Fine-tuned specialists | not started | 0 / 3 | no |
@@ -250,14 +250,16 @@ Open question §15.2 (wire protocol) is decided here. Spec: `docs/specs/protocol
 
 **Purpose:** everything that makes an agent *specific*, built on the extension API third parties will use (§1 goal 2). Context discipline defaults from §7 land here. Hard freeze of `kernel` at exit (D12).
 
-### P2.1 — Extension API — `not started`
+### P2.1 — Extension API — `done`
 
-Depends on ADR-0001 and D8.
+Depends on ADR-0001 and D8. Spec: `docs/specs/extension-manifest.md` (🧑 review pending); profile key `[extensions].paths` (`profile-schema.md` §3.12).
 
-- [ ] Compiled tier: `ext` API for Rust middleware and first-party tools
-- [ ] Out-of-process tier: manifest (name, version, tools provided, capabilities required) and loader for the ADR-0001 mechanism; these run under the Session or Stateless sandbox launcher
-- [ ] A profile cannot load an extension that requests capabilities beyond the profile's grants
-- [ ] Example third-party out-of-process tool in `examples/`
+- [x] Compiled tier: `ext` API for Rust middleware and first-party tools (`ext::Extension` / `ExtensionSet`; the base tools and `ask_user` are registered through it, and the launcher's validator registry and middleware come from it)
+- [x] Out-of-process tier: manifest (name, version, tools provided, capabilities required) and loader for the ADR-0001 mechanism; these run under the Session or Stateless sandbox launcher (`extension.toml`, `ext::load_all`, `ext::ProcessTool` speaking the stdio-MCP subset; `ext::probe` for `initialize` + `tools/list`)
+- [x] A profile cannot load an extension that requests capabilities beyond the profile's grants (`ext::admit` runs `derive_policy_with` against `grants_resolved`; tested in `crates/ext/tests/admission.rs` and end to end in `crates/orchestrator/tests/extensions.rs`)
+- [x] Example third-party out-of-process tool in `examples/` (`examples/text-stats/`, run by a real kernel in both `stateless` and `session` kinds, and through the launcher under real `bwrap`)
+
+Left for later, recorded in the spec's open questions: extension loads are not yet `profile_load` events (needs a `ProfileKind` variant, so a kernel ADR); manifest `[dependencies]` (a `uv` venv per extension, ADR-0001) is not implemented.
 
 ### P2.2 — MCP client with lazy exposure — `not started`
 
@@ -547,7 +549,7 @@ Maps §14 risks, plus two surfaced in review, to the milestones that mitigate th
 
 | Risk | Mitigating milestones | Status |
 |---|---|---|
-| Extension mechanism chosen wrong | D8, P0.3, P0.4 (ADR-0001), P2.1 | open |
+| Extension mechanism chosen wrong | D8, P0.3, P0.4 (ADR-0001), P2.1 | open (P2.1 built the ADR-0001 mechanism and runs an example extension end to end under the `None` and `bwrap` backends; real domain tools, such as numpy, meshers and `sbatch`, and dependency install are still unexercised) |
 | bwrap won't nest in rootless Podman under the login node's 2002-uid map | P0.1, P0.4 (ADR-0002), P1.7 | open (P1.7's inner shape is verified under bwrap on 2026-09-06, and the nested spike chain passed on a local rootless Podman machine only with `VARIANT=label-disable,unmask`; the site's uid map, kernel and SELinux policy are still untested) |
 | In-house tools unavailable to agents and CI | D9, P0.5 mocks, spill handler behind an interface (P2.5) | open |
 | Kernel feature creep | P0.0 (CONTRIBUTING), P1.0 specs, D12 freeze schedule, boundary track | open (specs and boundary tests in place; the soft freeze is declared at P1 exit) |
@@ -624,3 +626,4 @@ From §15 of the dev plan.
 | 2026-09-06 | Kernel fix (pre-freeze, no ADR needed): `Suspension.in_process_wakers` counted open tasks with a *still-live* future, which raced against a script that exits before the suspend is written; the recording said 0 and the replay's never-resolving stand-in said 1, failing `exit_criteria::run_script_session_replays_with_diff_logs_passing_and_no_network` on a CI re-run of unchanged code. It now counts open tasks with `Task.in_process_waker` set, which is deterministic and also what the launcher needs (a resolved-but-undelivered update still lives in this process). `kernel-interface.md` §7.1 amended. |
 | 2026-09-06 | **P1.9 landed** (`crates/orchestrator`): the launcher (`profiles::resolve` → `KernelConfig`/`SessionInit`, `SessionRecord` under `<state>/sessions`, backend selection per D14, endpoint + OpenAI-compatible provider from quirks, `Described` tool wrappers, `ask_user` registered), the ACP v1 agent component (`session/new|prompt|cancel|close|list|load|resume`, `elicitation/create` for `ask_user`, `_grist/subscribe|unsubscribe|event|cancel|status`), the session driver, the pure event projector, `grist-kernel` (stdio, one session), `grist-daemon` (unix socket 0600 + peer-uid check, one `grist-kernel` per session, typed forwarding) and `grist-connect` (stdio ↔ socket or `--tcp`). New normative spec `docs/specs/protocol.md`; client doc `docs/clients/zed.md` + checked-in `agent_servers` snippet. 8 new tests (`tests/acp_agent.rs`, `tests/daemon.rs`, the latter spawning the real binaries against a fake SSE endpoint). New DAG edge `orchestrator → providers`. The default agent profile now allows `ask_user` (D17; no atom needed); `tests/shipped.rs`, `launcher.rs` and the spec example updated. Served ACP version is v1 (SDK 2.1.0 keeps v2 unstable; Zed negotiates v1). Open: the live Zed session (🧑). |
 | 2026-09-06 | Workspace lint config: the ACP SDK enables serde_json's `preserve_order`, which cargo unifies workspace-wide and which enlarges every `serde_json::Value`; five untouched kernel enums then tripped clippy's `large_enum_variant`. Rather than box public kernel types for a lint, `clippy.toml` raises `enum-variant-size-threshold` to 512 (reasoning in the file). The kernel's canonical JSON sorts keys itself, so hashes and `diff-logs` are unaffected (kernel suite unchanged: 200 passed). |
+| 2026-10-04 | **P2.1 Extension API** landed: `ext` compiled tier (`Extension`, `ExtensionSet`, `BaseTools`), out-of-process manifest (`extension.toml`), admission against profile grants, `ProcessTool` over the Stateless and Session launchers using the stdio-MCP subset, `probe`; profile key `[extensions].paths` (`profile-schema.md` §3.12, **[amended in P2.1]**); launcher wiring (`orchestrator → ext` edge); example `examples/text-stats/`. New spec `docs/specs/extension-manifest.md`. 29 new tests, two of which run under real `bwrap` (verified on a Linux host with bubblewrap; they run in the CI `test` job under `GRIST_REQUIRE_BWRAP=1`). Running under bwrap showed that an extension must be able to read its own directory, so the loader adds `fs.ro:<extension dir>` implicitly. |
