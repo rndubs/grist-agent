@@ -264,7 +264,7 @@ Depends on ADR-0001 and D8.
 Design per **ADR-0008** (proposed) and `profile-schema.md` §3.4.1: a tool index in the prompt, schemas on demand.
 
 - [ ] 🧑 ADR-0008 accepted
-- [ ] MCP client (stdio and HTTP transports) as an `ext` module; each server is a `Session`-kind tool host (D5)
+- [ ] MCP client (stdio and HTTP transports) as an `ext` module; each server is a `Session`-kind tool host (D5). HTTP means MCP Streamable HTTP (SSE only as a fallback), tested against a real Streamable HTTP server; kagent's kmcp-deployed `kagent-tools` server is a ready-made in-cluster one for the OpenShift track
 - [ ] Servers register at session start and their `tools/list` answers are logged; schemas of `index = "names"` / `"server"` servers are **not** put in the request
 - [ ] Tool index prompt block (`tool_index`, D7 position 4): one line per indexed server from `description`, plus tool names for `"names"` servers
 - [ ] `find_tools(query, limit)` returns `{ name, description }` matches and exposes them from the next model call until the next compaction; keyword matcher behind an interface
@@ -386,6 +386,8 @@ Per D4, D11, D18. The P1.9 supervisor grows into this crate.
 - [ ] Messaging over the same protocol as UI ↔ kernel
 - [ ] External agentic systems wrapped as tools that return `Task` handles
 - [ ] Inbound messages carry a trust tier like any other trigger
+- [ ] Decide A2A as the agent-to-agent wire format beside ACP, so external A2A clients (e.g. kagent) can call grist agents and grist can wrap A2A agents as `Task`-returning tools; record in an ADR
+- [ ] `ask_user` and any tool-approval prompt carried in a shape compatible with kagent's A2A human-in-the-loop extension (`ask_user_request`, `tool_approval_request`) where that costs nothing
 
 ### P3.6 — Workflow runner — `not started`
 
@@ -400,6 +402,7 @@ Per D4, D11, D18. The P1.9 supervisor grows into this crate.
 
 - [ ] List / inspect / suspend / resume running agents across placements
 - [ ] Session logs and artifacts from remote placements retrievable locally
+- [ ] OpenTelemetry export of the event log using the GenAI semantic conventions: a read-only projection like P3.1, message content opt-in (D10 redaction still applies first)
 
 ### Exit criteria — Phase 3
 
@@ -509,6 +512,7 @@ Not scheduled. Each needs a human decision or an external dependency before it c
 | `podman` placement on arbitrary Linux hosts | Only the login node and local are needed now (D18) | A second deployment target |
 | Native macOS sandbox backend | macOS is dev-only; Podman machine or `None` suffices (D14) | Never, unless deployment changes |
 | Middleware as an out-of-process extension | Rejected in D8 | An ADR overturning D8 |
+| Credential injection at an egress proxy | Borrowed from kagent: the kernel holds placeholders and an egress proxy adds the real key, so no grist process ever holds a provider secret (stronger than D10's "only the provider client reads it") | The OpenShift egress proxy (`docs/addendum-openshift.md` §6 q1) exists |
 | Native Anthropic / OpenAI provider clients | §5: later, for prompt caching and provider-specific features | After P2 |
 | Sub-agents and tooling around the in-house solvers | Tools are placeholders (D9) | In-house tool interfaces documented |
 

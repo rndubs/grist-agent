@@ -71,7 +71,7 @@ Binding to loopback means the port is unreachable from other pods, so OpenShift'
 
 | # | Milestone | Done when |
 |---|---|---|
-| OS.0 | Helm chart: images for daemon, kernel and toolhost; namespace, RBAC, quota, default-deny NetworkPolicy; profiles as a ConfigMap; single replica, kernel processes inside the orchestrator pod (dev only, logged like the `None` backend) | 🧑 a session runs on the team's cluster through `oc port-forward` and Zed |
+| OS.0 | Helm chart: images for daemon, kernel and toolhost; namespace, RBAC, quota, default-deny NetworkPolicy; profiles as a ConfigMap; single replica, kernel processes inside the orchestrator pod (dev only, logged like the `None` backend). Chart conventions borrowed from kagent: a `global.imageRegistry` value for air-gapped mirrors, one `watchNamespaces` value that sets RBAC scope, a `Route` rendered only when the Route API exists, hardened `securityContext` defaults (non-root, read-only root filesystem, drop all capabilities, `RuntimeDefault` seccomp) covered by helm-unittest | 🧑 a session runs on the team's cluster through `oc port-forward` and Zed |
 | OS.1 | `Pod` sandbox backend + `grist-toolhost`; per-session tool pod and NetworkPolicy from `Policy` | the P1.7 sandbox tests pass against a kind/CRC cluster in an opt-in CI job, like `ci:standin` |
 | OS.2 | Kernel pod per session; RWX PVC; per-session `Lease`; suspend releases pods, resume on any replica | kill an orchestrator replica mid-session; the session resumes on another with `diff-logs` identical |
 | OS.3 | Scaling: `replicas` and HPA on active sessions; per-session resource requests from the agent profile; optional Kata runtime class | 🧑 N concurrent sessions across M replicas within quota |
@@ -81,7 +81,7 @@ OS.0 can start any time after this addendum is accepted. It needs only P1.9, whi
 
 ## 6. Open questions (for the security team and us)
 
-1. **Egress by hostname.** `net:` atoms name hosts, but `NetworkPolicy` matches IPs and pods. Options: resolve hosts at launch (fragile), use OVN-Kubernetes `EgressFirewall` with `dnsName` (namespace-wide, not per session), or put a per-namespace HTTP egress proxy with a host allowlist in front. The proxy is the likely answer.
+1. **Egress by hostname.** `net:` atoms name hosts, but `NetworkPolicy` matches IPs and pods. Options: resolve hosts at launch (fragile), use OVN-Kubernetes `EgressFirewall` with `dnsName` (namespace-wide, not per session), or put a per-namespace HTTP egress proxy with a host allowlist in front. The proxy is the likely answer, and it can also inject provider credentials so the kernel pod holds only placeholders (the kagent pattern; Backlog row "Credential injection at an egress proxy").
 2. **Slurm from OpenShift.** Can pods submit to the HPC cluster, and can a Slurm epilog reach a waker in the cluster? If not, OpenShift sessions are limited to in-cluster work, and HPC work stays on the login node (D18).
 3. **Workdir source.** Is the RWX PVC populated by `git clone` at session start, or is it a shared project filesystem? This decides whether login-node and cluster sessions can share files.
 4. **Kata availability** on the target cluster, and whether the security team requires it for tool pods.
