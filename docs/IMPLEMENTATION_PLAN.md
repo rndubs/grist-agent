@@ -369,7 +369,7 @@ Per D4, D11, D18. The P1.9 supervisor grows into this crate.
 - [ ] Outer bwrap applied by the launcher, outside the mutable layer; the harness cannot see or alter it
 - [ ] `host::remote-client` (from P1.6 stub) so a remote kernel's host calls reach the right filesystem
 - [ ] 🧑 Verify the full path from a laptop client to a login-node kernel
-- [ ] `podman` placement on other Linux hosts and OpenShift placement are in the Backlog
+- [ ] `podman` placement on other Linux hosts and OpenShift placement are in the Backlog (OpenShift: proposed in `docs/addendum-openshift.md`)
 
 ### P3.4 — Wakers and trust tiers — `not started` 🧑
 
@@ -504,7 +504,7 @@ Not scheduled. Each needs a human decision or an external dependency before it c
 
 | Item | Why deferred | Unblocks when |
 |---|---|---|
-| OpenShift placement for the kernel | Security context constraints differ from the login node; access patterns need the security team (D11, D18) | Security team engagement |
+| OpenShift placement for the kernel | Security context constraints differ from the login node; access patterns need the security team (D11, D18). **Proposed plan:** `docs/addendum-openshift.md` (pod-per-session `Pod` sandbox backend instead of bwrap; track OS.0–OS.4) | Addendum accepted; security team engagement on its §6 questions |
 | Websocket transport with bearer-token auth and TLS | Remote access is SSH-forwarded for now (D11) | OpenShift decision, or a browser UI requirement |
 | `podman` placement on arbitrary Linux hosts | Only the login node and local are needed now (D18) | A second deployment target |
 | Native macOS sandbox backend | macOS is dev-only; Podman machine or `None` suffices (D14) | Never, unless deployment changes |
