@@ -89,4 +89,23 @@ OS.0 can start any time after this addendum is accepted. It needs only P1.9, whi
 
 ## 7. Related work: kagent
 
-*Pending: the research write-up is being added in a follow-up section.*
+Reviewed 2026-10-04 from source at kagent `main` (bf8afa5, the v1 rewrite, `api.kagent.dev/v1alpha3`; latest tag `v1.0.0-alpha7`, Apache-2.0, CNCF). kagent is a Kubernetes control plane for agents: CRDs (`Agent`, `AgentTemplate`, `Harness`, `ModelConfig`, `RemoteMCPServer`, `SandboxTemplate`), a Go controller, Google-ADK-based runtimes (plus Claude Code / Codex / bring-your-own harnesses), PostgreSQL for sessions and an append-only task-event log, A2A as its core protocol, and a React UI.
+
+**Decision: borrow and interoperate; do not adopt.**
+
+- **Not a fit as our platform:**
+  - The v1 line is alpha, and it hard-depends on Substrate (also alpha). Substrate runs each session as an actor in gVisor or a microVM on a worker pool, which needs KVM nodes or node agents, and on OpenShift privileged SCCs that kagent does not ship.
+  - It has no custom CA bundle (`TLSConfig` has only `disableVerify`; the CA fields are commented out as deferred).
+  - Egress rules accept DNS names only, not IPs.
+  - Auth defaults to insecure.
+  - There is no Slurm story, and its log is explicitly "not an exact replay archive".
+- **What it lacks that we have:** per-tool-call sandboxing, record/replay with `diff-logs`, lazy tool exposure (ADR-0008), ACP to editors, and Slurm.
+- **Worth borrowing:**
+  1. The CRD split between *what an agent is* (`AgentTemplate`) and *how it runs* (`Harness`), compiled to an immutable, digest-addressed revision that sessions pin to. This is a good shape if open question 5 ever becomes a `GristAgent` CRD.
+  2. Credential placeholders, with real keys injected by an egress proxy, so secrets never enter the agent process. This pairs with open question 1's egress proxy.
+  3. Their HITL A2A extension payloads (`tool_approval_request`, `ask_user_request`) as an interoperable shape for `ask_user`.
+  4. GenAI OpenTelemetry semantic conventions for P3 observability.
+  5. Helm patterns: an air-gap `imageRegistry` value, one `watchNamespaces` value driving RBAC scope, a `Route` rendered only when the Route API exists, and hardened `securityContext` defaults tested with helm-unittest.
+- **Interoperate:**
+  - Consume MCP servers deployed by kmcp over Streamable HTTP; that is P2.2's HTTP transport, and the `kagent-tools` Kubernetes MCP server comes for free.
+  - Consider an A2A endpoint on the orchestrator later, so kagent or other A2A clients can call grist agents.
