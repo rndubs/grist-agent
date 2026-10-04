@@ -41,6 +41,8 @@ enum Step {
 struct Scripted {
     steps: Mutex<VecDeque<Step>>,
     requests: Mutex<Vec<ModelRequest>>,
+    /// Notified when a `Step::Slow` model call starts (its step is taken off the script).
+    slow_started: tokio::sync::Notify,
 }
 
 impl Scripted {
@@ -48,6 +50,7 @@ impl Scripted {
         Arc::new(Scripted {
             steps: Mutex::new(steps.into()),
             requests: Mutex::new(Vec::new()),
+            slow_started: tokio::sync::Notify::new(),
         })
     }
     fn requests(&self) -> Vec<ModelRequest> {
@@ -71,6 +74,7 @@ impl Provider for Scripted {
         match step {
             Step::Reply(r) => Ok(r),
             Step::Slow(d, r) => {
+                self.slow_started.notify_one();
                 tokio::time::sleep(d).await;
                 Ok(r)
             }
@@ -117,6 +121,12 @@ fn profiles_dir() -> PathBuf {
         .unwrap()
 }
 
+/// `job.sh` waits for this file (in the checkout, its working directory) before it exits, so the
+/// task is still running when the turn without tool calls ends and the session suspends; the test
+/// creates it once it has seen `suspended`. A fixed `sleep` raced slow runners (a script that exits
+/// mid-turn is applied at the boundary and the session never suspends). Gives up after 30 s.
+const JOB_RELEASE: &str = "job.release";
+
 struct Fixture {
     _dir: tempfile::TempDir,
     repo: PathBuf,
@@ -131,7 +141,11 @@ fn fixture() -> Fixture {
     std::fs::write(repo.join("hello.txt"), "hello from the checkout\n").unwrap();
     std::fs::write(
         repo.join("job.sh"),
-        "#!/bin/sh\nsleep 1\necho \"job output: $1\"\n",
+        format!(
+            "#!/bin/sh\n\
+             for _ in $(seq 3000); do [ -e {JOB_RELEASE} ] && break; sleep 0.01; done\n\
+             echo \"job output: $1\"\n"
+        ),
     )
     .unwrap();
     let home = dir.path().join("home");
@@ -504,7 +518,7 @@ async fn session_cancel_stops_the_turn_with_stop_reason_cancelled() {
         ),
         text("after"),
     ]);
-    let srv = server(&f, provider, false);
+    let srv = server(&f, provider.clone(), false);
     let seen = Arc::new(Seen::default());
     let repo = f.repo.clone();
     let launch = f.launch.clone();
@@ -519,8 +533,11 @@ async fn session_cancel_stops_the_turn_with_stop_reason_cancelled() {
         .unwrap();
         let cx2 = cx.clone();
         let id2 = id.clone();
+        // Cancel while the slow model call is in flight. A fixed delay could fire before the turn
+        // reached the model on a slow runner: the slow step was then never taken, and the next
+        // prompt got "late" instead of "after".
         tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(300)).await;
+            provider.slow_started.notified().await;
             cx2.send_notification(CancelNotification::new(id2)).unwrap();
         });
         assert_eq!(
@@ -555,6 +572,20 @@ async fn run_script_suspends_and_the_process_exit_waker_resumes_within_one_promp
     let launch = f.launch.clone();
     with_client(srv, seen.clone(), async move |cx| {
         let id = start(&cx, &repo).await;
+        cx.send_request(SubscribeRequest {
+            session_id: id.clone(),
+            kinds: Some(vec!["suspended".into()]),
+        })
+        .block_task()
+        .await
+        .unwrap();
+        let (seen2, repo2) = (seen.clone(), repo.clone());
+        tokio::spawn(async move {
+            while seen2.event_kinds().is_empty() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            std::fs::write(repo2.join(JOB_RELEASE), "").unwrap();
+        });
         assert_eq!(
             prompt(&cx, &id, "Run job.sh with alpha and report.").await,
             StopReason::EndTurn
