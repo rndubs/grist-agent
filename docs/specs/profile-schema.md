@@ -347,11 +347,48 @@ MCP tools (`mcp.<server>.<tool>`) and out-of-process extension tools (`ext.<mani
 | `command` | list of strings | when `stdio` | argv; element 0 is the program. Placeholders are expanded in every element. |
 | `url` | string | when `http` | The host of the URL MUST be covered by a `net:` atom in `capabilities` below (`E_MCP_URL_HOST`). |
 | `capabilities` | list of strings | yes | What the server process runs under. Each atom MUST be `narrower_than` some grant (`E_CAP_EXCEEDS_GRANTS`). For `stdio`, MUST include `proc:<command[0]>`. |
+| `description` | string | no | One line saying what the server is for, shown in the tool index (§3.4.1). Absent: the server's own `instructions` from the MCP `initialize` result, first line only, then its `serverInfo.name`. SHOULD be set (`W_MCP_NO_DESCRIPTION`) when `index = "server"`, since then it is all the model sees. Single line, at most 200 characters (`E_VALUE_RANGE`). **[amended before P2.2]** |
 | `tools` | list of strings | no | Restrict to these server-side tool names; absent = all. |
-| `lazy` | bool | no (default `true`) | `true`: schemas stay out of the prompt until `find_tools` or a skill names them. `false`: schemas are always in the prompt — allowed but counted against `context_budget_tokens`. |
+| `index` | `"names"`, `"server"` or `"full"` | no (default `"names"`) | How the server appears to the model (§3.4.1). `"names"`: the server's line and the names of its tools are in the tool index; schemas load through `find_tools` or a skill. `"server"`: only the server's line is in the index; tool names and schemas come from `find_tools`. `"full"`: every schema is sent with every request, as for first-party tools, and the server is not in the index; allowed but counted against `context_budget_tokens`. Replaces the earlier `lazy` bool (`lazy = true` ≈ `"names"`, `lazy = false` = `"full"`); `lazy` is now an unknown key. **[amended before P2.2]** |
 | `env` | table of string → string | no | Extra environment for the server process; values MUST NOT contain secrets inline — use `secret:<NAME>` atoms in `capabilities` and the launcher injects the handle-resolved value under the same name. Keys are subject to the `env_allow` secret-pattern rule (§3.9). |
 
 An MCP server is a `Session`-kind tool host (D5): one sandboxed process per session under `kernel::derive_policy_with(capabilities, grants_resolved, &limits)`.
+
+#### 3.4.1 Tool index and `find_tools` **[amended before P2.2]**
+
+A model cannot ask for a tool it does not know exists, so lazy exposure keeps a cheap **index** in the prompt and loads the expensive **schemas** on demand. This is the shape Claude Code uses for deferred tools.
+
+**The index** is system prompt block 4 (§8.1), built once per session after every server has answered `initialize` and `tools/list`, and rebuilt only on resume. One section per server with `index = "names"` or `"server"`, in `[[mcp_servers]]` order:
+
+```markdown
+# Available tools
+
+These tools are not loaded yet. Call `find_tools` with a tool name or a description of what you need; matching tools can be called from your next turn.
+
+## docs — Search and read the internal simulation manual
+mcp.docs.search, mcp.docs.read_page, mcp.docs.list_sections
+
+## solver_db — Query past solver runs and their convergence history
+(call find_tools to list this server's tools)
+```
+
+- The heading is `## <name> — <description>` (§3.4 `description`, with its fallbacks).
+- `"names"` servers list their tool names (after the `tools` filter and the §11.5 name mapping), comma-separated, in the order `tools/list` returned them. Names only, never descriptions or schemas.
+- `"server"` servers show the fixed line `(call find_tools to list this server's tools)`.
+- `"full"` servers are absent; their schemas are always in the request.
+- No `index = "names"` or `"server"` servers: the block is empty and omitted (§8.2).
+
+**`find_tools(query: string, limit?: int = 5)`** is a first-party, in-process tool registered whenever at least one server is indexed. It matches `query` against the indexed tools' names, server names, server descriptions and tool descriptions (keyword match in P2.2; the matcher sits behind an interface so a ranked or embedding matcher can replace it). It returns up to `limit` matches as `{ name, description }`, and an exact tool name always matches itself first. Every tool it returns is **exposed**: its schema is included in `req.tools` from the next model call on.
+
+**Exposure** is the set of indexed tools whose schemas are in the request:
+
+- A tool joins it when `find_tools` returns it or when an active skill names it (P2.3).
+- It stays exposed for the rest of the session; it does not expire after one turn, so the model never has to search for the same tool twice.
+- Compaction (P2.6) clears it; tools named by a skill still active after compaction stay.
+- It is not separate state: the P2.2 `before_model` hook recomputes it from `State.messages` (the `find_tools` results since the last compaction) and the active skills. Resume and replay therefore reproduce it, and every `model_request` records the result in `tool_names` (event-schema.md §2).
+- An indexed tool that is not exposed yet is still registered, so a call to it passes the kernel's registry check (kernel-interface.md loop step E2). The P2.2 hook's `before_tool` returns `Replace` with an error result, `"<name> is not loaded; call find_tools(\"<name>\") first"`, rather than running it with arguments the model wrote without seeing the schema. The call and the replacement are logged as usual (step E4, origin `Middleware`).
+
+**Budget.** The index costs about one line per server plus a few tokens per tool name for `"names"` servers, and is independent of schema size. A server with hundreds of tools SHOULD use `"server"`. P2.2's test asserts this: prompt plus request-tool tokens grow by at most the index line(s) per added server, and adding tools to a `"server"` server leaves them unchanged.
 
 ### 3.5 `[skills]` (P2.3)
 
@@ -842,24 +879,25 @@ Floats are serialized per RFC 8785 (shortest round-trip). Text sources are resol
 | 1 | model prompt variant | `[prompt]` | none | per session |
 | 2 | agent role prompt | `[agent].role_prompt` | none | per session |
 | 3 | project instructions | `[agent].agents_md` file | `# Project instructions (AGENTS.md)` | per session |
-| 4 | active skills | skills activated for this turn (P2.3), each `## Skill: <name>` then its body, in activation order | `# Active skills` | **per turn** |
-| 5 | notebook | `[notebook].path` contents | `# Notebook` | **per turn**: present on the first model call after `on_resume` when `inject_on_resume = true`; P2.6 may additionally present it after a compaction |
+| 4 | tool index | indexed MCP servers (§3.4.1, P2.2) **[amended before P2.2]** | `# Available tools` | per session |
+| 5 | active skills | skills activated for this turn (P2.3), each `## Skill: <name>` then its body, in activation order | `# Active skills` | **per turn** |
+| 6 | notebook | `[notebook].path` contents | `# Notebook` | **per turn**: present on the first model call after `on_resume` when `inject_on_resume = true`; P2.6 may additionally present it after a compaction |
 
 ### 8.2 Joining
 
-- A block's text is trimmed of leading and trailing newlines, then prefixed with its header line (blocks 3–5) followed by one blank line.
-- Empty blocks (absent table, missing `AGENTS.md`, no active skills, no notebook) are **omitted entirely** — no header, no separator.
+- A block's text is trimmed of leading and trailing newlines, then prefixed with its header line (blocks 3–6) followed by one blank line.
+- Empty blocks (absent table, missing `AGENTS.md`, no indexed MCP servers, no active skills, no notebook) are **omitted entirely** — no header, no separator.
 - Non-empty blocks are joined with the separator `"\n\n"`.
 - If every block is empty, no system message is sent.
-- No other text is added: no date, no tool list (tool schemas travel in the request's tool field, not the prompt), no environment description. Anything else a team wants is a role prompt or `AGENTS.md`.
+- No other text is added: no date, no tool list beyond the block-4 index of not-yet-loaded MCP tools (tool schemas travel in the request's tool field, not the prompt), no environment description. Anything else a team wants is a role prompt or `AGENTS.md`.
 
 ### 8.3 Per-session versus per-turn
 
-Blocks 1–3 are read once, at session start (and again at resume, since a resumed process rebuilds them), and held for the session; editing `AGENTS.md` mid-session does not change the prompt until the next resume. This keeps a session's model calls reproducible from its checkpoint (D16). Blocks 4–5 are recomputed every turn from state the kernel already logs (skill activations, notebook path), so replay reproduces them.
+Blocks 1–4 are read once, at session start (and again at resume, since a resumed process rebuilds them), and held for the session; editing `AGENTS.md` mid-session does not change the prompt until the next resume. Block 4 comes from the servers' `tools/list` answers, which are logged when the servers register (P2.2), so replay rebuilds it from the log rather than from live servers. This keeps a session's model calls reproducible from its checkpoint (D16). Blocks 5–6 are recomputed every turn from state the kernel already logs (skill activations, notebook path), so replay reproduces them.
 
 ### 8.4 Hashing
 
-The assembled system prompt string is part of the request body and is therefore covered by `request_hash` as event-schema.md defines it (the hash of the canonical request: model id, system prompt, messages, tool schemas, sampling parameters). In addition, every `model_request` event carries `prompt_blocks: [{ kind: model|role|agents_md|skills|notebook, hash }]`, where `hash` is `b3` of that block's UTF-8 bytes *after* header prefixing. This is what lets the provenance projector (P3.1) say "this call used role prompt X and skills Y, Z" without re-parsing the prompt.
+The assembled system prompt string is part of the request body and is therefore covered by `request_hash` as event-schema.md defines it (the hash of the canonical request: model id, system prompt, messages, tool schemas, sampling parameters). In addition, every `model_request` event carries `prompt_blocks: [{ kind: model|role|agents_md|tool_index|skills|notebook, hash }]`, where `hash` is `b3` of that block's UTF-8 bytes *after* header prefixing. This is what lets the provenance projector (P3.1) say "this call used role prompt X and skills Y, Z" without re-parsing the prompt.
 
 ---
 
@@ -1381,7 +1419,30 @@ path = "${home}/notes.md"
 ```
 Expected: `E_CAP_EXCEEDS_GRANTS at default.toml:notebook.path: requires 'fs.rw:${home}/notes.md'`
 
-Warnings that P1.8 also tests (as `warns_<slug>`): `W_AGENTS_MD_MISSING`, `W_NET_MASKED` (a `net:` atom with `sandbox.network = false`), `W_SKILL_PATH_MISSING`, `W_PROFILE_DRIFT` (P5.1; emitted as `warning{class: "profile_drift"}`).
+**34. MCP server `index` and `description` out of range** **[amended before P2.2]**
+
+```toml
+schema_version = 1
+[agent]
+name = "default"
+[capabilities]
+grants = ["fs.rw:${workdir}", "net:mcp.internal.example"]
+[tools]
+allow = ["read"]
+[[mcp_servers]]
+name = "docs"
+transport = "http"
+url = "https://mcp.internal.example/mcp"
+capabilities = ["net:mcp.internal.example"]
+index = "lazy"
+```
+Expected: `E_VALUE_RANGE at default.toml:mcp_servers[0].index: must be "names", "server" or "full"`
+
+Second form: the ADR-0008 predecessor key, `lazy = true` in place of `index`. Expected: `E_UNKNOWN_KEY at default.toml:mcp_servers[0].lazy`.
+
+Third form: `description = "line one\nline two"` in place of `index`. Expected: `E_VALUE_RANGE at default.toml:mcp_servers[0].description: must be one line of at most 200 characters`.
+
+Warnings that P1.8 also tests (as `warns_<slug>`): `W_AGENTS_MD_MISSING`, `W_NET_MASKED` (a `net:` atom with `sandbox.network = false`), `W_SKILL_PATH_MISSING`, `W_PROFILE_DRIFT` (P5.1; emitted as `warning{class: "profile_drift"}`). Added with ADR-0008: `W_MCP_NO_DESCRIPTION` (an `index = "server"` server without `description`).
 
 ---
 

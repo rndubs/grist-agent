@@ -261,12 +261,18 @@ Depends on ADR-0001 and D8.
 
 ### P2.2 — MCP client with lazy exposure — `not started`
 
+Design per **ADR-0008** (proposed) and `profile-schema.md` §3.4.1: a tool index in the prompt, schemas on demand.
+
+- [ ] 🧑 ADR-0008 accepted
 - [ ] MCP client (stdio and HTTP transports) as an `ext` module; each server is a `Session`-kind tool host (D5)
-- [ ] Servers register at session start but their tool schemas are **not** put in the prompt
-- [ ] `find_tools(query)` tool surfaces relevant MCP tools for the next turn only
-- [ ] Skills can reference MCP tools by name, which exposes them for that turn
+- [ ] Servers register at session start and their `tools/list` answers are logged; schemas of `index = "names"` / `"server"` servers are **not** put in the request
+- [ ] Tool index prompt block (`tool_index`, D7 position 4): one line per indexed server from `description`, plus tool names for `"names"` servers
+- [ ] `find_tools(query, limit)` returns `{ name, description }` matches and exposes them from the next model call until the next compaction; keyword matcher behind an interface
+- [ ] Skills can reference MCP tools by name, which exposes them while the skill is active
+- [ ] Exposure is recomputed from `State.messages` and active skills in a `before_model` hook (no new state); a call to an indexed but unexposed tool gets a `Replace` result telling the model to call `find_tools` first
 - [ ] MCP tool calls run under the policy derived from the server's declared capabilities
-- [ ] Test: prompt token count with N registered servers is independent of N
+- [ ] Test: prompt plus request-tool tokens grow by at most the index line(s) per added server, and not at all when tools are added to an `index = "server"` server
+- [ ] Test: with only the index in context, a scripted model run finds a tool by name, calls `find_tools`, and calls the tool on the next turn; resume and replay reproduce the same `tool_names`
 
 ### P2.3 — Skills loader — `not started`
 
@@ -564,6 +570,7 @@ Maps §14 risks, plus two surfaced in review, to the milestones that mitigate th
 | ADR-0005 | Memory module interface: how much of ALMA's search space is exposed | P2.7 | pending |
 | ADR-0006 | Provenance store at fleet scale: Postgres alone or graph layer | P3.1 | pending |
 | ADR-0007 | Sub-agent capability pruning: automated vs. proposed-for-review | P4.6 | pending |
+| ADR-0008 | MCP lazy exposure keeps a tool index in the prompt; per-server `index` = names / server / full; amends D7 | P2.2 | proposed (2026-10-04) |
 
 Decisions D1–D20 in `design-decisions.md` predate the ADR process and are binding without one.
 

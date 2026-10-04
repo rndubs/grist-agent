@@ -193,8 +193,9 @@ static MCP_SERVER: TableSpec = closed(&[
     ("command", Ty::StrList),
     ("url", Ty::Str),
     ("capabilities", Ty::StrList),
+    ("description", Ty::Str),
     ("tools", Ty::StrList),
-    ("lazy", Ty::Bool),
+    ("index", Ty::Str),
     ("env", Ty::Table(&STR_MAP)),
 ]);
 static SKILLS: TableSpec = closed(&[("paths", Ty::StrList)]);
@@ -989,6 +990,24 @@ fn check_mcp_servers(t: &mut Table, cx: &mut Cx<'_>) {
                 &format!("{p}.transport"),
                 "must be \"stdio\" or \"http\"",
             ),
+        }
+        if let Some(d) = s.get("description").and_then(Value::as_str)
+            && (d.contains('\n') || d.chars().count() > 200)
+        {
+            cx.err(
+                "E_VALUE_RANGE",
+                &format!("{p}.description"),
+                "must be one line of at most 200 characters",
+            );
+        }
+        if let Some(i) = s.get("index").and_then(Value::as_str)
+            && !matches!(i, "names" | "server" | "full")
+        {
+            cx.err(
+                "E_VALUE_RANGE",
+                &format!("{p}.index"),
+                "must be \"names\", \"server\" or \"full\"",
+            );
         }
         if let Some(Value::Array(cmd)) = s.get("command") {
             for (j, a) in cmd.iter().enumerate() {

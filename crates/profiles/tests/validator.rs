@@ -1038,7 +1038,87 @@ path = "${home}/notes.md"
     );
 }
 
+fn mcp_agent(server_extra: &str) -> String {
+    format!(
+        r#"schema_version = 1
+[agent]
+name = "default"
+[capabilities]
+grants = ["fs.rw:${{workdir}}", "net:mcp.internal.example"]
+[tools]
+allow = ["read"]
+[[mcp_servers]]
+name = "docs"
+transport = "http"
+url = "https://mcp.internal.example/mcp"
+capabilities = ["net:mcp.internal.example"]
+{server_extra}
+"#
+    )
+}
+
+#[test]
+fn rejects_34_mcp_index_and_description_out_of_range() {
+    let t = Tree::new();
+    t.write("agents/default.toml", &mcp_agent(r#"index = "lazy""#));
+    assert_first_exact(
+        t.resolve("default"),
+        r#"E_VALUE_RANGE at default.toml:mcp_servers[0].index: must be "names", "server" or "full""#,
+    );
+    t.write("agents/default.toml", &mcp_agent("lazy = true"));
+    assert_first(
+        t.resolve("default"),
+        "E_UNKNOWN_KEY at default.toml:mcp_servers[0].lazy",
+    );
+    t.write(
+        "agents/default.toml",
+        &mcp_agent(r#"description = "line one\nline two""#),
+    );
+    assert_first_exact(
+        t.resolve("default"),
+        "E_VALUE_RANGE at default.toml:mcp_servers[0].description: must be one line of at most 200 characters",
+    );
+}
+
+#[test]
+fn mcp_index_defaults_to_names() {
+    let t = Tree::new();
+    t.write("agents/default.toml", &mcp_agent(""));
+    let r = t.resolve("default").unwrap();
+    let s = &r.resolved_profile.mcp_servers[0];
+    assert_eq!(s.index, "names");
+    assert_eq!(s.description, None);
+    assert!(!warning_codes(&r).contains(&"W_MCP_NO_DESCRIPTION"));
+}
+
 // ---- warnings --------------------------------------------------------------------------------
+
+#[test]
+fn warns_mcp_no_description() {
+    let t = Tree::new();
+    t.write("agents/default.toml", &mcp_agent(r#"index = "server""#));
+    let r = t.resolve("default").unwrap();
+    let w = r
+        .warnings
+        .iter()
+        .find(|w| w.code == "W_MCP_NO_DESCRIPTION")
+        .unwrap();
+    assert!(
+        w.to_string()
+            .starts_with("W_MCP_NO_DESCRIPTION at default.toml:mcp_servers[0].description"),
+        "{w}"
+    );
+    t.write(
+        "agents/default.toml",
+        &mcp_agent("index = \"server\"\ndescription = \"Internal simulation manual\""),
+    );
+    let r = t.resolve("default").unwrap();
+    assert!(!warning_codes(&r).contains(&"W_MCP_NO_DESCRIPTION"));
+    assert_eq!(
+        r.resolved_profile.mcp_servers[0].description.as_deref(),
+        Some("Internal simulation manual")
+    );
+}
 
 #[test]
 fn warns_agents_md_missing() {

@@ -200,7 +200,7 @@ Resolution: `kernel defaults + model profile + agent profile + project overrides
 We will drown the context window unless these are defaults, not options:
 
 1. **Persistent Python REPL as the primary domain tool.** Meshing, FEA setup, and post-processing are code with state that must persist across calls (a loaded mesh, a results dataset). One `python` tool backed by a session-scoped kernel inside the inner sandbox replaces dozens of MCP tools; the model scripts against libraries instead of orchestrating tool calls.
-2. **Lazy tool exposure.** MCP servers register but their schemas stay out of the prompt. A `find_tools(query)` tool surfaces relevant ones for the next turn; skills reference tools by name.
+2. **Lazy tool exposure.** MCP servers register but their schemas stay out of the prompt. A short tool index (server descriptions and, by default, tool names) stays in, so the model knows what exists; a `find_tools(query)` tool loads matching schemas from the next turn on, and skills reference tools by name (ADR-0008).
 3. **Artifacts, not data.** Content-addressed store; tool results over a cap spill automatically; solver logs get a structured-extraction pass (errors, convergence, timings); visualization returns PNGs.
 4. **Externalized working state.** A lab-notebook file the harness re-injects on resume; compaction summarizes *toward* the notebook, not into a lossy paragraph.
 5. **Scoped sub-agents** partition context by role.
