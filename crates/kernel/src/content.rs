@@ -158,6 +158,8 @@ pub enum PromptBlockKind {
     Role,
     /// Project instructions (`AGENTS.md`).
     AgentsMd,
+    /// Index of not-yet-loaded MCP tools (ADR-0008, P2.2).
+    ToolIndex,
     /// One active skill.
     Skills,
     /// Notebook (on resume).

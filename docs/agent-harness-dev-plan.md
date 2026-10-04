@@ -47,6 +47,8 @@ The plan below explains *what* each part is and *why* it exists, then lays out p
 | **HarnessDev** (Wu et al. 2026), Harness-evolution critiques (Jul 2026) | Evolved harnesses overfit dev sets, regress silently, depend on runtime model, and often lose to parallel sampling at equal cost | Hidden held-out evals; parallel-sampling baseline; per-model profiles; promotion gates |
 | **ALMA** (Xiong, Hu, Clune 2026) | Memory designs as executable code searched by a meta-agent with an archive | Memory as a pluggable module with store/retrieve/update/compress/forget; ALMA loop as one instance of our evolve loop |
 | **Agent Client Protocol** (Zed) | JSON-RPC schema for editor ↔ agent | Candidate wire format for UI ↔ daemon, gets editors as free clients |
+| **Claude Code** deferred tools / Anthropic tool search | Tool *names* stay in the prompt and full schemas load on request, so the model knows what exists without paying for every schema | The MCP tool index and `find_tools` (ADR-0008, P2.2) |
+| **kagent** (CNCF; v1 rewrite reviewed 2026-10-04 at `v1.0.0-alpha7`) | Kubernetes-native agents: what an agent *is* (`AgentTemplate`) split from how it *runs* (`Harness`), compiled to immutable digest-pinned revisions; credential placeholders with keys injected at an egress proxy; A2A with an interoperable human-in-the-loop extension; GenAI OpenTelemetry conventions; hardened, air-gap-friendly Helm chart | Ideas, not the platform (alpha, hard dependency on gVisor/microVM worker pools, no custom CA bundles, no HPC): the template/runtime split for any future CRD, egress-proxy credential injection, A2A and HITL payload shapes (P3.5), GenAI OTel export (P3.7), Helm patterns (OpenShift OS.0); kmcp-deployed MCP servers as P2.2 consumers. Detail: `docs/addendum-openshift.md` §7 |
 
 ---
 
@@ -200,7 +202,7 @@ Resolution: `kernel defaults + model profile + agent profile + project overrides
 We will drown the context window unless these are defaults, not options:
 
 1. **Persistent Python REPL as the primary domain tool.** Meshing, FEA setup, and post-processing are code with state that must persist across calls (a loaded mesh, a results dataset). One `python` tool backed by a session-scoped kernel inside the inner sandbox replaces dozens of MCP tools; the model scripts against libraries instead of orchestrating tool calls.
-2. **Lazy tool exposure.** MCP servers register but their schemas stay out of the prompt. A `find_tools(query)` tool surfaces relevant ones for the next turn; skills reference tools by name.
+2. **Lazy tool exposure.** MCP servers register but their schemas stay out of the prompt. A short tool index (server descriptions and, by default, tool names) stays in, so the model knows what exists; a `find_tools(query)` tool loads matching schemas from the next turn on, and skills reference tools by name (ADR-0008).
 3. **Artifacts, not data.** Content-addressed store; tool results over a cap spill automatically; solver logs get a structured-extraction pass (errors, convergence, timings); visualization returns PNGs.
 4. **Externalized working state.** A lab-notebook file the harness re-injects on resume; compaction summarizes *toward* the notebook, not into a lossy paragraph.
 5. **Scoped sub-agents** partition context by role.

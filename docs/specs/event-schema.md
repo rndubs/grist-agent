@@ -189,7 +189,7 @@ Once per turn, before the first provider attempt. Carries hashes and a summary, 
 | `model_id` | string | R | as sent |
 | `profiles` | `ActiveProfiles` | R | active profile hashes (D13) |
 | `system_prompt_hash` | hash | R | hash of `req.system` (block list) |
-| `prompt_blocks` | `[{kind, name, hash}]` | R | one per `PromptBlock`, in order; `kind` ∈ `model`, `role`, `agents_md`, `skills`, `notebook` (D7); lets P3.1 say which role prompt and skills a call used without re-parsing |
+| `prompt_blocks` | `[{kind, name, hash}]` | R | one per `PromptBlock`, in order; `kind` ∈ `model`, `role`, `agents_md`, `tool_index`, `skills`, `notebook` (D7; `tool_index` from ADR-0008); lets P3.1 say which role prompt and skills a call used without re-parsing |
 | `message_count` | u32 | R | `req.messages.len()` |
 | `tool_names` | string[] | R | `req.tools` names in order (lazy exposure makes this vary per turn) |
 | `params_hash` | hash | R | hash of `req.params` |

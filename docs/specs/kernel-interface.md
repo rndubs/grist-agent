@@ -225,7 +225,7 @@ pub struct PromptBlock {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 /// D7 block order; names match `profile-schema.md` §8. `Skills` may appear once per active skill.
-pub enum PromptBlockKind { Model, Role, AgentsMd, Skills, Notebook }
+pub enum PromptBlockKind { Model, Role, AgentsMd, ToolIndex, Skills, Notebook }   // ToolIndex: ADR-0008, P2.2
 ```
 
 Rules:

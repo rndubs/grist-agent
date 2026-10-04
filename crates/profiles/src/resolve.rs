@@ -1073,8 +1073,9 @@ fn build_profile(
                 command: list_at(s, "command"),
                 url: s_at(s, "url"),
                 capabilities: sorted_syms(caps),
+                description: s_at(s, "description"),
                 tools: s.get("tools").map(|_| list_at(s, "tools")),
-                lazy: b_at(s, "lazy", true),
+                index: s_at(s, "index").unwrap_or_else(|| "names".to_owned()),
                 env: s
                     .get("env")
                     .and_then(Value::as_table)
@@ -1266,6 +1267,16 @@ fn expand_stage(
             "sandbox.network",
             "net: atoms are granted but sandbox.network = false masks them",
         ));
+    }
+    for (i, s) in p.mcp_servers.iter().enumerate() {
+        if s.index == "server" && s.description.is_none() {
+            stage.warnings.push(Diagnostic::new(
+                "W_MCP_NO_DESCRIPTION",
+                layered.origin_of("mcp_servers"),
+                format!("{}.description", idx("mcp_servers", i)),
+                "index = \"server\" shows the model only this line; set a description",
+            ));
+        }
     }
     errs_of(diags)
 }

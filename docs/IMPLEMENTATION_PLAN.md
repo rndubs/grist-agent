@@ -261,12 +261,18 @@ Depends on ADR-0001 and D8.
 
 ### P2.2 — MCP client with lazy exposure — `not started`
 
-- [ ] MCP client (stdio and HTTP transports) as an `ext` module; each server is a `Session`-kind tool host (D5)
-- [ ] Servers register at session start but their tool schemas are **not** put in the prompt
-- [ ] `find_tools(query)` tool surfaces relevant MCP tools for the next turn only
-- [ ] Skills can reference MCP tools by name, which exposes them for that turn
+Design per **ADR-0008** (proposed) and `profile-schema.md` §3.4.1: a tool index in the prompt, schemas on demand.
+
+- [ ] 🧑 ADR-0008 accepted
+- [ ] MCP client (stdio and HTTP transports) as an `ext` module; each server is a `Session`-kind tool host (D5). HTTP means MCP Streamable HTTP (SSE only as a fallback), tested against a real Streamable HTTP server; kagent's kmcp-deployed `kagent-tools` server is a ready-made in-cluster one for the OpenShift track
+- [ ] Servers register at session start and their `tools/list` answers are logged; schemas of `index = "names"` / `"server"` servers are **not** put in the request
+- [ ] Tool index prompt block (`tool_index`, D7 position 4): one line per indexed server from `description`, plus tool names for `"names"` servers
+- [ ] `find_tools(query, limit)` returns `{ name, description }` matches and exposes them from the next model call until the next compaction; keyword matcher behind an interface
+- [ ] Skills can reference MCP tools by name, which exposes them while the skill is active
+- [ ] Exposure is recomputed from `State.messages` and active skills in a `before_model` hook (no new state); a call to an indexed but unexposed tool gets a `Replace` result telling the model to call `find_tools` first
 - [ ] MCP tool calls run under the policy derived from the server's declared capabilities
-- [ ] Test: prompt token count with N registered servers is independent of N
+- [ ] Test: prompt plus request-tool tokens grow by at most the index line(s) per added server, and not at all when tools are added to an `index = "server"` server
+- [ ] Test: with only the index in context, a scripted model run finds a tool by name, calls `find_tools`, and calls the tool on the next turn; resume and replay reproduce the same `tool_names`
 
 ### P2.3 — Skills loader — `not started`
 
@@ -363,7 +369,7 @@ Per D4, D11, D18. The P1.9 supervisor grows into this crate.
 - [ ] Outer bwrap applied by the launcher, outside the mutable layer; the harness cannot see or alter it
 - [ ] `host::remote-client` (from P1.6 stub) so a remote kernel's host calls reach the right filesystem
 - [ ] 🧑 Verify the full path from a laptop client to a login-node kernel
-- [ ] `podman` placement on other Linux hosts and OpenShift placement are in the Backlog
+- [ ] `podman` placement on other Linux hosts and OpenShift placement are in the Backlog (OpenShift: proposed in `docs/addendum-openshift.md`)
 
 ### P3.4 — Wakers and trust tiers — `not started` 🧑
 
@@ -380,6 +386,8 @@ Per D4, D11, D18. The P1.9 supervisor grows into this crate.
 - [ ] Messaging over the same protocol as UI ↔ kernel
 - [ ] External agentic systems wrapped as tools that return `Task` handles
 - [ ] Inbound messages carry a trust tier like any other trigger
+- [ ] Decide A2A as the agent-to-agent wire format beside ACP, so external A2A clients (e.g. kagent) can call grist agents and grist can wrap A2A agents as `Task`-returning tools; record in an ADR
+- [ ] `ask_user` and any tool-approval prompt carried in a shape compatible with kagent's A2A human-in-the-loop extension (`ask_user_request`, `tool_approval_request`) where that costs nothing
 
 ### P3.6 — Workflow runner — `not started`
 
@@ -394,6 +402,7 @@ Per D4, D11, D18. The P1.9 supervisor grows into this crate.
 
 - [ ] List / inspect / suspend / resume running agents across placements
 - [ ] Session logs and artifacts from remote placements retrievable locally
+- [ ] OpenTelemetry export of the event log using the GenAI semantic conventions: a read-only projection like P3.1, message content opt-in (D10 redaction still applies first)
 
 ### Exit criteria — Phase 3
 
@@ -498,11 +507,12 @@ Not scheduled. Each needs a human decision or an external dependency before it c
 
 | Item | Why deferred | Unblocks when |
 |---|---|---|
-| OpenShift placement for the kernel | Security context constraints differ from the login node; access patterns need the security team (D11, D18) | Security team engagement |
+| OpenShift placement for the kernel | Security context constraints differ from the login node; access patterns need the security team (D11, D18). **Proposed plan:** `docs/addendum-openshift.md` (pod-per-session `Pod` sandbox backend instead of bwrap; track OS.0–OS.4) | Addendum accepted; security team engagement on its §6 questions |
 | Websocket transport with bearer-token auth and TLS | Remote access is SSH-forwarded for now (D11) | OpenShift decision, or a browser UI requirement |
 | `podman` placement on arbitrary Linux hosts | Only the login node and local are needed now (D18) | A second deployment target |
 | Native macOS sandbox backend | macOS is dev-only; Podman machine or `None` suffices (D14) | Never, unless deployment changes |
 | Middleware as an out-of-process extension | Rejected in D8 | An ADR overturning D8 |
+| Credential injection at an egress proxy | Borrowed from kagent: the kernel holds placeholders and an egress proxy adds the real key, so no grist process ever holds a provider secret (stronger than D10's "only the provider client reads it") | The OpenShift egress proxy (`docs/addendum-openshift.md` §6 q1) exists |
 | Native Anthropic / OpenAI provider clients | §5: later, for prompt caching and provider-specific features | After P2 |
 | Sub-agents and tooling around the in-house solvers | Tools are placeholders (D9) | In-house tool interfaces documented |
 
@@ -564,6 +574,7 @@ Maps §14 risks, plus two surfaced in review, to the milestones that mitigate th
 | ADR-0005 | Memory module interface: how much of ALMA's search space is exposed | P2.7 | pending |
 | ADR-0006 | Provenance store at fleet scale: Postgres alone or graph layer | P3.1 | pending |
 | ADR-0007 | Sub-agent capability pruning: automated vs. proposed-for-review | P4.6 | pending |
+| ADR-0008 | MCP lazy exposure keeps a tool index in the prompt; per-server `index` = names / server / full; amends D7 | P2.2 | proposed (2026-10-04) |
 
 Decisions D1–D20 in `design-decisions.md` predate the ADR process and are binding without one.
 

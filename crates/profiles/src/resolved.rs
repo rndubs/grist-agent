@@ -102,10 +102,12 @@ pub struct McpServer {
     pub url: Option<String>,
     /// Bundle-expanded, sorted, symbolic atoms.
     pub capabilities: Vec<String>,
+    /// One-line index description; `None` = the server's own (§3.4.1).
+    pub description: Option<String>,
     /// Restrict to these server-side tools; `None` = all.
     pub tools: Option<Vec<String>>,
-    /// Keep schemas out of the prompt until named.
-    pub lazy: bool,
+    /// `"names"`, `"server"` or `"full"` (ADR-0008, §3.4.1).
+    pub index: String,
     /// Extra environment.
     pub env: BTreeMap<String, String>,
 }
