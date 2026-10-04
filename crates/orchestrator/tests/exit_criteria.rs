@@ -228,6 +228,17 @@ fn fast_retry(max_attempts: u32) -> RetryPolicy {
     }
 }
 
+/// `job.sh` waits for this file (in its working directory, the checkout) before it exits, so the
+/// task is still running when the turn without tool calls ends and the session suspends; the test
+/// creates it once it has seen the suspension. A fixed `sleep` here raced slow CI runners: the
+/// script exited mid-turn, its update was applied at the boundary (§4.2) and the session never
+/// suspended. The script gives up after 30 s so a failed test does not leak it.
+const JOB_RELEASE: &str = "job.release";
+
+fn release_job(repo: &Path) {
+    std::fs::write(repo.join(JOB_RELEASE), "").unwrap();
+}
+
 fn make_repo(dir: &Path) -> PathBuf {
     let repo = dir.join("repo");
     std::fs::create_dir_all(repo.join("src")).unwrap();
@@ -238,7 +249,11 @@ fn make_repo(dir: &Path) -> PathBuf {
     .unwrap();
     std::fs::write(
         repo.join("job.sh"),
-        "#!/usr/bin/env bash\nsleep 0.2\necho \"job output: $1\"\nexit 0\n",
+        format!(
+            "#!/usr/bin/env bash\n\
+             for _ in $(seq 3000); do [ -e {JOB_RELEASE} ] && break; sleep 0.01; done\n\
+             echo \"job output: $1\"\nexit 0\n"
+        ),
     )
     .unwrap();
     repo
@@ -365,6 +380,7 @@ async fn run_script_session_suspends_and_the_process_exit_waker_resumes_it() {
     );
     assert_eq!(k.status(), SessionStatus::Suspended);
     // No polling: `run` awaits the inbox; the waker delivers the outcome when the script exits.
+    release_job(&s.workdir);
     assert_eq!(k.run().await.unwrap(), RunStop::Idle);
     assert_eq!(k.state().turn, 3);
     let task = &k.state().pending_tasks[&TaskId("t1-c1".into())];
@@ -522,6 +538,7 @@ async fn record_then_replay(
         .unwrap();
     if expect_suspension {
         assert!(matches!(k.run().await.unwrap(), RunStop::Suspended(_)));
+        release_job(&repo);
     }
     assert_eq!(k.run().await.unwrap(), RunStop::Idle);
     let recorded_state = k.state().clone();
