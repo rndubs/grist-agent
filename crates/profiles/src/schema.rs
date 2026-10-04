@@ -199,6 +199,7 @@ static MCP_SERVER: TableSpec = closed(&[
     ("env", Ty::Table(&STR_MAP)),
 ]);
 static SKILLS: TableSpec = closed(&[("paths", Ty::StrList)]);
+static EXTENSIONS: TableSpec = closed(&[("paths", Ty::StrList)]);
 static SUBAGENT: TableSpec = closed(&[
     ("name", Ty::Str),
     ("catalog", Ty::Str),
@@ -245,6 +246,7 @@ static AGENT_FILE: TableSpec = TableSpec {
         ("tools", Ty::Table(&TOOLS)),
         ("mcp_servers", Ty::Tables(&MCP_SERVER)),
         ("skills", Ty::Table(&SKILLS)),
+        ("extensions", Ty::Table(&EXTENSIONS)),
         ("subagents", Ty::Tables(&SUBAGENT)),
         ("middleware", Ty::Tables(&MIDDLEWARE_ENTRY)),
         ("memory", Ty::Table(&MEMORY)),
@@ -267,6 +269,7 @@ static PROJECT_FILE: TableSpec = TableSpec {
         ("tools", Ty::Table(&TOOLS)),
         ("mcp_servers", Ty::Tables(&MCP_SERVER)),
         ("skills", Ty::Table(&SKILLS)),
+        ("extensions", Ty::Table(&EXTENSIONS)),
         ("subagents", Ty::Tables(&SUBAGENT)),
         ("middleware", Ty::Tables(&MIDDLEWARE_ENTRY)),
         ("memory", Ty::Table(&MEMORY)),
@@ -903,12 +906,14 @@ fn check_agent_semantics(t: &mut Table, cx: &mut Cx<'_>) {
         }
     }
     check_mcp_servers(t, cx);
-    let n_skills = str_list(t, "skills.paths").len();
-    for i in 0..n_skills {
-        if let Some(Value::Array(a)) = get_mut(t, "skills.paths")
-            && let Some(v) = a.get_mut(i)
-        {
-            resolve_path_field(v, &idx("skills.paths", i), false, cx);
+    for key in ["skills.paths", "extensions.paths"] {
+        let n = str_list(t, key).len();
+        for i in 0..n {
+            if let Some(Value::Array(a)) = get_mut(t, key)
+                && let Some(v) = a.get_mut(i)
+            {
+                resolve_path_field(v, &idx(key, i), false, cx);
+            }
         }
     }
     check_subagents(t, cx);

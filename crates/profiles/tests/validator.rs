@@ -1262,3 +1262,49 @@ fn warns_profile_drift() {
     assert!(!warning_codes(&r).contains(&"W_PROFILE_DRIFT"));
     assert!(!r.drift.unwrap().warn);
 }
+
+/// P2.1: `[extensions].paths` is expanded like `skills.paths`, a relative path resolves against
+/// the profile file, it only enters the resolved hash when non-empty, and the table is closed.
+#[test]
+fn extensions_paths_are_expanded_and_hashed_only_when_present() {
+    let t = Tree::new();
+    let base = r#"schema_version = 1
+[agent]
+name = "default"
+[capabilities]
+grants = ["fs.rw:${workdir}"]
+[tools]
+allow = ["read"]
+"#;
+    t.write("agents/default.toml", base);
+    let without = t.resolve("default").unwrap();
+    assert!(without.kernel_inputs.extension_paths.is_empty());
+    assert!(without.resolved_profile.extensions_paths.is_empty());
+
+    t.write(
+        "agents/default.toml",
+        &format!("{base}[extensions]\npaths = [\"${{workdir}}/.grist/extensions/stats\", \"ext/local\"]\n"),
+    );
+    let with = t.resolve("default").unwrap();
+    assert_eq!(
+        with.kernel_inputs.extension_paths,
+        [
+            t.workdir.join(".grist/extensions/stats"),
+            t.profiles.join("agents").join("ext/local")
+        ]
+    );
+    assert_eq!(
+        with.resolved_profile.extensions_paths[0],
+        "${workdir}/.grist/extensions/stats"
+    );
+    assert_ne!(with.resolved_profile_hash, without.resolved_profile_hash);
+
+    t.write(
+        "agents/default.toml",
+        &format!("{base}[extensions]\npath = []\n"),
+    );
+    assert_first(
+        t.resolve("default"),
+        "E_UNKNOWN_KEY at default.toml:extensions.path",
+    );
+}

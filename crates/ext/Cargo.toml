@@ -10,6 +10,21 @@ description = "Extension API and first-party extensions: MCP client, sub-agent s
 
 [dependencies]
 kernel.workspace = true
+# P2.1: out-of-process tools run under the sandbox launchers; the base tools are registered
+# through the compiled tier (crates/README.md: ext → sandbox).
+sandbox.workspace = true
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+toml.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio.workspace = true
+# The out-of-process tests launch the example extension through the `None` backend (D14).
+sandbox = { workspace = true, features = ["dev-sandbox-none"] }
+host.workspace = true
 
 [lints]
 workspace = true

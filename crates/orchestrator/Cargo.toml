@@ -10,8 +10,10 @@ description = "Placement, wakers, fleet, agent-to-agent messaging, trust tiers. 
 
 [dependencies]
 kernel.workspace = true
-# P1.9 launcher and protocol server (crates/README.md: orchestrator → host, sandbox, profiles, providers).
+# P1.9 launcher and protocol server (crates/README.md: orchestrator → host, sandbox, profiles,
+# providers); P2.1 compiled and out-of-process extensions (orchestrator → ext).
 host.workspace = true
+ext.workspace = true
 sandbox.workspace = true
 profiles.workspace = true
 providers.workspace = true
